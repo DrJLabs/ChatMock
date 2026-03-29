@@ -1,13 +1,17 @@
 services:
   chatmock:
-    image: ${CHATMOCK_IMAGE:-storagetime/chatmock:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chatmock-local:latest
     container_name: chatmock
+    restart: unless-stopped
     command: ["serve"]
     env_file: .env
     environment:
       - CHATGPT_LOCAL_HOME=/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - chatmock_data:/data
       - ./prompt.md:/app/prompt.md:ro
@@ -19,7 +23,10 @@ services:
       start_period: 5s
 
   chatmock-login:
-    image: ${CHATMOCK_IMAGE:-storagetime/chatmock:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chatmock-local:latest
     profiles: ["login"]
     command: ["login"]
     environment:
@@ -28,7 +35,7 @@ services:
     volumes:
       - chatmock_data:/data
     ports:
-      - "1455:1455"
+      - "127.0.0.1:1455:1455"
 
 volumes:
   chatmock_data:
