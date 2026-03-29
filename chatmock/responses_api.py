@@ -44,6 +44,10 @@ def instructions_for_model(config: Dict[str, Any], model: str) -> str:
     return base
 
 
+def fallback_passthrough_instructions() -> str:
+    return "Follow the developer and user instructions contained in the input."
+
+
 def extract_client_session_id(headers: Any) -> str | None:
     try:
         return headers.get("X-Session-Id") or headers.get("session_id") or None
@@ -99,7 +103,10 @@ def normalize_responses_payload(
 
     instructions = normalized.get("instructions")
     if not isinstance(instructions, str) or not instructions.strip():
-        instructions = instructions_for_model(config, normalized_model)
+        if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
+            instructions = instructions_for_model(config, normalized_model)
+        else:
+            instructions = fallback_passthrough_instructions()
         normalized["instructions"] = instructions
 
     reasoning_effort = config.get("REASONING_EFFORT", "medium")

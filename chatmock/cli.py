@@ -271,6 +271,7 @@ def cmd_serve(
     debug_model: str | None,
     expose_reasoning_models: bool,
     default_web_search: bool,
+    inject_default_instructions: bool,
 ) -> int:
     app = create_app(
         verbose=verbose,
@@ -282,6 +283,7 @@ def cmd_serve(
         debug_model=debug_model,
         expose_reasoning_models=expose_reasoning_models,
         default_web_search=default_web_search,
+        inject_default_instructions=inject_default_instructions,
     )
 
     app.run(host=host, use_reloader=False, port=port, threaded=True)
@@ -356,6 +358,15 @@ def main() -> None:
             "Also configurable via CHATGPT_LOCAL_ENABLE_WEB_SEARCH."
         ),
     )
+    p_serve.add_argument(
+        "--inject-default-instructions",
+        action=argparse.BooleanOptionalAction,
+        default=(os.getenv("CHATGPT_LOCAL_INJECT_DEFAULT_INSTRUCTIONS", "true")).strip().lower() in ("1", "true", "yes", "on"),
+        help=(
+            "Inject the default prompt.md/prompt_gpt5_codex.md instructions when a Responses request omits top-level instructions. "
+            "Also configurable via CHATGPT_LOCAL_INJECT_DEFAULT_INSTRUCTIONS."
+        ),
+    )
 
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
@@ -378,6 +389,7 @@ def main() -> None:
                 debug_model=args.debug_model,
                 expose_reasoning_models=args.expose_reasoning_models,
                 default_web_search=args.enable_web_search,
+                inject_default_instructions=args.inject_default_instructions,
             )
         )
     elif args.command == "info":
