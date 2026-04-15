@@ -29,6 +29,10 @@ class FakeUpstream:
         self.text = text
 
     def iter_lines(self, decode_unicode: bool = False):
+        if self.content:
+            for line in self.content.splitlines():
+                yield line.decode("utf-8") if decode_unicode else line
+            return
         for event in self._events or []:
             payload = f"data: {json.dumps(event)}"
             yield payload if decode_unicode else payload.encode("utf-8")
@@ -46,6 +50,24 @@ class FakeUpstream:
 
     def close(self) -> None:
         return None
+
+
+def decode_sse_events(body: str) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for block in body.split("\n\n"):
+        if not block.strip():
+            continue
+        for line in block.splitlines():
+            if not line.startswith("data: "):
+                continue
+            payload = line[len("data: ") :]
+            try:
+                parsed = json.loads(payload)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
+    return events
 
 
 class RouteTests(unittest.TestCase):
@@ -546,6 +568,70 @@ class RouteTests(unittest.TestCase):
         self.assertIn("response.output_text.delta", response.get_data(as_text=True))
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_stream_normalizes_tool_call_added_arguments(self, mock_start) -> None:
+        tool_args = "{\"query\":\"today's weather in Kingston, Tennessee\",\"chatHistory\":[]}"
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_tool", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_tool_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_tool_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": tool_args,
+                        "item_id": "fc_tool_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_tool_1",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": tool_args,
+                            "call_id": "call_tool_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_tool", "object": "response", "status": "completed", "output": []},
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "stream": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        events = decode_sse_events(response.get_data(as_text=True))
+        self.assertEqual(events[0]["type"], "response.created")
+        self.assertEqual(events[1]["type"], "response.output_item.added")
+        self.assertEqual(events[1]["item"]["arguments"], tool_args)
+        self.assertEqual(events[2]["type"], "response.function_call_arguments.done")
+        self.assertEqual(events[2]["arguments"], tool_args)
+        self.assertEqual(events[3]["type"], "response.output_item.done")
+        self.assertEqual(events[3]["item"]["arguments"], tool_args)
+        self.assertEqual(events[4]["type"], "response.completed")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:
         response = self.client.post(
             "/v1/responses",
@@ -652,6 +738,102 @@ class RouteTests(unittest.TestCase):
             follow_up["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_normalizes_tool_call_added_arguments(self, mock_connect, _mock_auth) -> None:
+        tool_args = "{\"path\":\"hello-2026-04-15.md\",\"content\":\"hello\"}"
+
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_tool"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.added",
+                            "item": {
+                                "id": "fc_ws_tool_1",
+                                "type": "function_call",
+                                "status": "in_progress",
+                                "arguments": "",
+                                "call_id": "call_ws_tool_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.function_call_arguments.done",
+                            "arguments": tool_args,
+                            "item_id": "fc_ws_tool_1",
+                            "output_index": 0,
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.done",
+                            "item": {
+                                "id": "fc_ws_tool_1",
+                                "type": "function_call",
+                                "status": "completed",
+                                "arguments": tool_args,
+                                "call_id": "call_ws_tool_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_tool"}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            created = json.loads(client.recv())
+            added = json.loads(client.recv())
+            args_done = json.loads(client.recv())
+            item_done = json.loads(client.recv())
+            completed = json.loads(client.recv())
+
+        self.assertEqual(created["type"], "response.created")
+        self.assertEqual(added["type"], "response.output_item.added")
+        self.assertEqual(added["item"]["arguments"], tool_args)
+        self.assertEqual(args_done["type"], "response.function_call_arguments.done")
+        self.assertEqual(args_done["arguments"], tool_args)
+        self.assertEqual(item_done["type"], "response.output_item.done")
+        self.assertEqual(item_done["item"]["arguments"], tool_args)
+        self.assertEqual(completed["type"], "response.completed")
 
 
 if __name__ == "__main__":

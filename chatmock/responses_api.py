@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List
@@ -190,6 +191,146 @@ def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
             yield evt
 
 
+def _tool_call_event_key(item_or_event: Dict[str, Any] | None) -> str | None:
+    if not isinstance(item_or_event, dict):
+        return None
+    item_id = item_or_event.get("id")
+    if isinstance(item_id, str) and item_id.strip():
+        return item_id
+    call_id = item_or_event.get("call_id")
+    if isinstance(call_id, str) and call_id.strip():
+        return call_id
+    return None
+
+
+def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
+    item = event.get("item")
+    if not isinstance(item, dict):
+        return False
+    return item.get("type") in ("function_call", "web_search_call")
+
+
+def _best_tool_arguments(
+    pending: Dict[str, Any] | None,
+    *,
+    item: Dict[str, Any] | None = None,
+    done_args: Any = None,
+) -> Any:
+    if isinstance(done_args, str) and done_args:
+        return done_args
+    if isinstance(done_args, (dict, list)):
+        return done_args
+    if isinstance(item, dict):
+        raw = item.get("arguments")
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, (dict, list)):
+            return raw
+        raw = item.get("parameters")
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, (dict, list)):
+            return raw
+    if isinstance(pending, dict):
+        raw = pending.get("arguments_done")
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, (dict, list)):
+            return raw
+        raw = pending.get("argument_buffer")
+        if isinstance(raw, str) and raw:
+            return raw
+    return None
+
+
+class ResponsesToolCallStreamNormalizer:
+    def __init__(self) -> None:
+        self._pending: Dict[str, Dict[str, Any]] = {}
+
+    def process(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
+        kind = event.get("type")
+        if kind == "response.output_item.added" and _is_buffered_tool_call_event(event):
+            item = event.get("item")
+            key = _tool_call_event_key(item)
+            if key:
+                self._pending[key] = {
+                    "added_event": copy.deepcopy(event),
+                    "added_emitted": False,
+                    "argument_buffer": "",
+                    "arguments_done": None,
+                }
+                return []
+
+        if kind == "response.function_call_arguments.delta":
+            key = event.get("item_id")
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            if pending is not None:
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    pending["argument_buffer"] = f"{pending['argument_buffer']}{delta}"
+                return []
+
+        if kind == "response.function_call_arguments.done":
+            key = event.get("item_id")
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            if pending is not None:
+                pending["arguments_done"] = event.get("arguments")
+                out: List[Dict[str, Any]] = []
+                if not pending["added_emitted"]:
+                    added_event = copy.deepcopy(pending["added_event"])
+                    item = added_event.get("item")
+                    if isinstance(item, dict):
+                        best_args = _best_tool_arguments(pending, item=item, done_args=event.get("arguments"))
+                        if best_args is not None:
+                            item["arguments"] = best_args
+                    pending["added_emitted"] = True
+                    out.append(added_event)
+                out.append(event)
+                return out
+
+        if kind == "response.output_item.done" and _is_buffered_tool_call_event(event):
+            item = event.get("item")
+            key = _tool_call_event_key(item)
+            pending = self._pending.pop(key, None) if isinstance(key, str) else None
+            if pending is not None:
+                out = []
+                if not pending["added_emitted"]:
+                    added_event = copy.deepcopy(pending["added_event"])
+                    added_item = added_event.get("item")
+                    if isinstance(added_item, dict):
+                        best_args = _best_tool_arguments(pending, item=item if isinstance(item, dict) else None)
+                        if best_args is not None:
+                            added_item["arguments"] = best_args
+                    out.append(added_event)
+                out.append(event)
+                return out
+
+        if kind in ("response.completed", "response.failed", "error") and self._pending:
+            out: List[Dict[str, Any]] = []
+            for pending in self._pending.values():
+                if pending.get("added_emitted"):
+                    continue
+                added_event = copy.deepcopy(pending["added_event"])
+                item = added_event.get("item")
+                if isinstance(item, dict):
+                    best_args = _best_tool_arguments(pending, item=item)
+                    if best_args is not None:
+                        item["arguments"] = best_args
+                out.append(added_event)
+            self._pending.clear()
+            out.append(event)
+            return out
+
+        return [event]
+
+
+def iter_normalized_response_events(events: Iterable[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
+    normalizer = ResponsesToolCallStreamNormalizer()
+    for event in events:
+        for normalized in normalizer.process(event):
+            yield normalized
+
+
 def aggregate_response_from_sse(
     upstream: Any,
     *,
@@ -198,7 +339,7 @@ def aggregate_response_from_sse(
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
     try:
-        for evt in iter_sse_event_payloads(upstream):
+        for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
             if callable(on_event):
                 try:
                     on_event(evt)
@@ -226,32 +367,18 @@ def stream_upstream_bytes(
     *,
     on_event: Any | None = None,
 ) -> Iterable[bytes]:
-    buffer = b""
     try:
-        for chunk in upstream.iter_content(chunk_size=None):
-            if chunk:
-                if callable(on_event):
-                    if isinstance(chunk, bytes):
-                        buffer += chunk
-                    else:
-                        buffer += str(chunk).encode("utf-8", errors="ignore")
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        line = line.rstrip(b"\r")
-                        if not line.startswith(b"data: "):
-                            continue
-                        data = line[len(b"data: ") :].strip()
-                        if not data or data == b"[DONE]":
-                            continue
-                        try:
-                            evt = json.loads(data.decode("utf-8", errors="ignore"))
-                        except Exception:
-                            evt = None
-                        if isinstance(evt, dict):
-                            try:
-                                on_event(evt)
-                            except Exception:
-                                pass
-                yield chunk
+        for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
+            if callable(on_event):
+                try:
+                    on_event(evt)
+                except Exception:
+                    pass
+            event_type = evt.get("type")
+            payload = json.dumps(evt, ensure_ascii=False)
+            if isinstance(event_type, str) and event_type.strip():
+                yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
+            else:
+                yield f"data: {payload}\n\n".encode("utf-8")
     finally:
         upstream.close()

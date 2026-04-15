@@ -13,6 +13,7 @@ from websockets.exceptions import ConnectionClosed
 
 from .responses_api import (
     ResponsesRequestError,
+    ResponsesToolCallStreamNormalizer,
     extract_client_session_id,
     normalize_responses_payload,
 )
@@ -181,6 +182,7 @@ def register_websocket_routes(sock: Sock) -> None:
 
                 upstream_ws.send(outbound_text)
 
+                stream_normalizer = ResponsesToolCallStreamNormalizer()
                 while True:
                     try:
                         upstream_message = upstream_ws.recv()
@@ -199,15 +201,23 @@ def register_websocket_routes(sock: Sock) -> None:
                             print("STREAM OUT WS /v1/responses\n" + str(upstream_message))
                         except Exception:
                             pass
-                    ws.send(upstream_message)
 
                     try:
                         parsed = json.loads(upstream_message)
                     except Exception:
                         parsed = None
-                    if isinstance(parsed, dict) and active_session_id:
-                        note_responses_stream_event(active_session_id, parsed)
-                    if _is_terminal_event(parsed):
+                    emitted_terminal = False
+                    if isinstance(parsed, dict):
+                        for normalized_event in stream_normalizer.process(parsed):
+                            normalized_message = json.dumps(normalized_event)
+                            ws.send(normalized_message)
+                            if active_session_id:
+                                note_responses_stream_event(active_session_id, normalized_event)
+                            if _is_terminal_event(normalized_event):
+                                emitted_terminal = True
+                    else:
+                        ws.send(upstream_message)
+                    if _is_terminal_event(parsed) or emitted_terminal:
                         if isinstance(parsed, dict) and parsed.get("type") in ("response.failed", "error"):
                             if upstream_ws is not None:
                                 try:
