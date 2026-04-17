@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List
+from typing import Any, Dict, Iterable, Iterator, List, Literal
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import ServiceTierResolution, resolve_service_tier
@@ -53,6 +53,21 @@ def fallback_passthrough_instructions() -> str:
         "Always include every required argument before making the tool call. "
         "If a tool call returns a schema error, inspect the schema and try again with corrected arguments."
     )
+
+
+def resolve_effective_instructions(
+    *,
+    endpoint_kind: Literal["responses", "chat_completions", "completions"],
+    payload: Dict[str, Any],
+    model: str,
+    config: Dict[str, Any],
+) -> str:
+    explicit = payload.get("instructions") if endpoint_kind == "responses" else None
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit
+    if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
+        return instructions_for_model(config, model)
+    return fallback_passthrough_instructions()
 
 
 def extract_client_session_id(headers: Any) -> str | None:
@@ -108,13 +123,12 @@ def normalize_responses_payload(
     if "store" not in normalized:
         normalized["store"] = False
 
-    instructions = normalized.get("instructions")
-    if not isinstance(instructions, str) or not instructions.strip():
-        if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
-            instructions = instructions_for_model(config, normalized_model)
-        else:
-            instructions = fallback_passthrough_instructions()
-        normalized["instructions"] = instructions
+    normalized["instructions"] = resolve_effective_instructions(
+        endpoint_kind="responses",
+        payload=normalized,
+        model=normalized_model,
+        config=config,
+    )
 
     reasoning_effort = config.get("REASONING_EFFORT", "medium")
     reasoning_summary = config.get("REASONING_SUMMARY", "auto")
@@ -157,7 +171,7 @@ def normalize_responses_payload(
     normalized.pop("fast_mode", None)
 
     input_items = _input_items_for_session(normalized.get("input"))
-    session_id = ensure_session_id(instructions, input_items, client_session_id)
+    session_id = ensure_session_id(normalized["instructions"], input_items, client_session_id)
     prompt_cache_key = normalized.get("prompt_cache_key")
     if not isinstance(prompt_cache_key, str) or not prompt_cache_key.strip():
         normalized["prompt_cache_key"] = session_id

@@ -6,17 +6,16 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import resolve_service_tier
 from .limits import record_rate_limits_from_response
 from .http import build_cors_headers
-from .model_registry import list_public_models, uses_codex_instructions
+from .model_registry import list_public_models
 from .responses_api import (
     ResponsesRequestError,
     aggregate_response_from_sse,
     extract_client_session_id,
-    instructions_for_model,
     normalize_responses_payload,
+    resolve_effective_instructions,
     stream_upstream_bytes,
 )
 from .reasoning import (
@@ -71,10 +70,6 @@ def _wrap_stream_logging(label: str, iterator, enabled: bool):
             yield chunk
 
     return _gen()
-
-
-def _instructions_for_model(model: str) -> str:
-    return instructions_for_model(current_app.config, model)
 
 
 def _service_tier_from_payload(
@@ -216,10 +211,17 @@ def chat_completions() -> Response:
     if tier_error is not None:
         return tier_error
 
+    resolved_instructions = resolve_effective_instructions(
+        endpoint_kind="chat_completions",
+        payload=payload,
+        model=model,
+        config=current_app.config,
+    )
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
-        instructions=_instructions_for_model(model),
+        instructions=resolved_instructions,
         tools=tools_responses,
         tool_choice=tool_choice,
         parallel_tool_calls=parallel_tool_calls,
@@ -257,7 +259,7 @@ def chat_completions() -> Response:
             upstream2, err2 = start_upstream_request(
                 model,
                 input_items,
-                instructions=BASE_INSTRUCTIONS,
+                instructions=resolved_instructions,
                 tools=base_tools_only,
                 tool_choice=safe_choice,
                 parallel_tool_calls=parallel_tool_calls,
@@ -454,10 +456,18 @@ def completions() -> Response:
     service_tier, tier_error = _service_tier_from_payload(model, payload, verbose=verbose)
     if tier_error is not None:
         return tier_error
+
+    resolved_instructions = resolve_effective_instructions(
+        endpoint_kind="completions",
+        payload=payload,
+        model=model,
+        config=current_app.config,
+    )
+
     upstream, error_resp = start_upstream_request(
         model,
         input_items,
-        instructions=_instructions_for_model(model),
+        instructions=resolved_instructions,
         reasoning_param=reasoning_param,
         service_tier=service_tier,
     )

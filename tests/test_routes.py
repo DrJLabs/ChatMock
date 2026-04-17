@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.responses_api import fallback_passthrough_instructions
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -132,6 +133,83 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_use_fallback_instructions_when_default_injection_disabled(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], fallback_passthrough_instructions())
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_completions_use_fallback_instructions_when_default_injection_disabled(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/completions",
+            json={"model": "gpt-5.4", "prompt": "hi"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], fallback_passthrough_instructions())
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_retry_reuses_resolved_instructions(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.side_effect = [
+            (
+                FakeUpstream(status_code=400, content=b'{"error": {"message": "tool reject"}}', text='tool reject'),
+                None,
+            ),
+            (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-retry"}},
+                    ]
+                ),
+                None,
+            ),
+        ]
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_count, 2)
+        self.assertEqual(mock_start.call_args_list[1].kwargs["instructions"], fallback_passthrough_instructions())
 
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat(self, mock_start) -> None:
@@ -308,6 +386,39 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         outbound_payload = mock_start.call_args.args[0]
         self.assertEqual(outbound_payload["model"], "gpt-5.4")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_explicit", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_explicit",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "instructions": "custom instructions", "input": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["instructions"], "custom instructions")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_strips_unsupported_max_output_tokens(self, mock_start) -> None:
