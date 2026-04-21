@@ -221,7 +221,7 @@ def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
     item = event.get("item")
     if not isinstance(item, dict):
         return False
-    return item.get("type") in ("function_call", "web_search_call")
+    return item.get("type") in ("function_call", "web_search_call", "web_search_preview_call")
 
 
 def _best_tool_arguments(
@@ -290,16 +290,22 @@ class ResponsesToolCallStreamNormalizer:
             if pending is not None:
                 pending["arguments_done"] = event.get("arguments")
                 out: List[Dict[str, Any]] = []
+                best_args = _best_tool_arguments(
+                    pending,
+                    done_args=event.get("arguments"),
+                )
                 if not pending["added_emitted"]:
                     added_event = copy.deepcopy(pending["added_event"])
                     item = added_event.get("item")
                     if isinstance(item, dict):
-                        best_args = _best_tool_arguments(pending, item=item, done_args=event.get("arguments"))
                         if best_args is not None:
                             item["arguments"] = best_args
                     pending["added_emitted"] = True
                     out.append(added_event)
-                out.append(event)
+                done_event = copy.deepcopy(event)
+                if best_args is not None:
+                    done_event["arguments"] = best_args
+                out.append(done_event)
                 return out
 
         if kind == "response.output_item.done" and _is_buffered_tool_call_event(event):
@@ -308,15 +314,24 @@ class ResponsesToolCallStreamNormalizer:
             pending = self._pending.pop(key, None) if isinstance(key, str) else None
             if pending is not None:
                 out = []
+                best_args = _best_tool_arguments(
+                    pending,
+                    item=item if isinstance(item, dict) else None,
+                    done_args=pending.get("arguments_done"),
+                )
                 if not pending["added_emitted"]:
                     added_event = copy.deepcopy(pending["added_event"])
                     added_item = added_event.get("item")
                     if isinstance(added_item, dict):
-                        best_args = _best_tool_arguments(pending, item=item if isinstance(item, dict) else None)
                         if best_args is not None:
                             added_item["arguments"] = best_args
+                    pending["added_emitted"] = True
                     out.append(added_event)
-                out.append(event)
+                done_event = copy.deepcopy(event)
+                done_item = done_event.get("item")
+                if isinstance(done_item, dict) and best_args is not None:
+                    done_item["arguments"] = best_args
+                out.append(done_event)
                 return out
 
         if kind in ("response.completed", "response.failed", "error") and self._pending:

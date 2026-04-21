@@ -8,7 +8,10 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
-from chatmock.responses_api import fallback_passthrough_instructions
+from chatmock.responses_api import (
+    fallback_passthrough_instructions,
+    iter_normalized_response_events,
+)
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -700,8 +703,14 @@ class RouteTests(unittest.TestCase):
                         },
                     },
                     {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_tool_1",
+                        "output_index": 0,
+                    },
+                    {
                         "type": "response.function_call_arguments.done",
-                        "arguments": tool_args,
+                        "arguments": "",
                         "item_id": "fc_tool_1",
                         "output_index": 0,
                     },
@@ -711,7 +720,7 @@ class RouteTests(unittest.TestCase):
                             "id": "fc_tool_1",
                             "type": "function_call",
                             "status": "completed",
-                            "arguments": tool_args,
+                            "arguments": "",
                             "call_id": "call_tool_1",
                             "name": "webSearch",
                         },
@@ -875,8 +884,16 @@ class RouteTests(unittest.TestCase):
                     ),
                     json.dumps(
                         {
+                            "type": "response.function_call_arguments.delta",
+                            "delta": tool_args,
+                            "item_id": "fc_ws_tool_1",
+                            "output_index": 0,
+                        }
+                    ),
+                    json.dumps(
+                        {
                             "type": "response.function_call_arguments.done",
-                            "arguments": tool_args,
+                            "arguments": "",
                             "item_id": "fc_ws_tool_1",
                             "output_index": 0,
                         }
@@ -888,7 +905,7 @@ class RouteTests(unittest.TestCase):
                                 "id": "fc_ws_tool_1",
                                 "type": "function_call",
                                 "status": "completed",
-                                "arguments": tool_args,
+                                "arguments": "",
                                 "call_id": "call_ws_tool_1",
                                 "name": "writeFile",
                             },
@@ -945,6 +962,58 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(item_done["type"], "response.output_item.done")
         self.assertEqual(item_done["item"]["arguments"], tool_args)
         self.assertEqual(completed["type"], "response.completed")
+
+    def test_iter_normalized_response_events_buffers_web_search_preview_call(self) -> None:
+        tool_args = "{\"query\":\"preview me\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_preview_1",
+                            "type": "web_search_preview_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_preview_1",
+                            "name": "webSearchPreview",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_preview_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": "",
+                        "item_id": "fc_preview_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_preview_1",
+                            "type": "web_search_preview_call",
+                            "status": "completed",
+                            "arguments": "",
+                            "call_id": "call_preview_1",
+                            "name": "webSearchPreview",
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual([event["type"] for event in events], [
+            "response.output_item.added",
+            "response.function_call_arguments.done",
+            "response.output_item.done",
+        ])
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["arguments"], tool_args)
+        self.assertEqual(events[2]["item"]["arguments"], tool_args)
 
 
 if __name__ == "__main__":
