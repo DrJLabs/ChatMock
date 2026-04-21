@@ -209,7 +209,7 @@ def register_websocket_routes(sock: Sock) -> None:
                     emitted_terminal = False
                     if isinstance(parsed, dict):
                         for normalized_event in stream_normalizer.process(parsed):
-                            normalized_message = json.dumps(normalized_event)
+                            normalized_message = json.dumps(normalized_event, ensure_ascii=False)
                             ws.send(normalized_message)
                             if active_session_id:
                                 note_responses_stream_event(active_session_id, normalized_event)

@@ -193,10 +193,11 @@ def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
         if not line.startswith("data: "):
             continue
         data = line[len("data: ") :].strip()
-        if not data or data == "[DONE]":
-            if data == "[DONE]":
-                break
+        if not data:
             continue
+        if data == "[DONE]":
+            yield {"type": "[DONE]", "data": "[DONE]"}
+            break
         try:
             evt = json.loads(data)
         except Exception:
@@ -230,29 +231,26 @@ def _best_tool_arguments(
     item: Dict[str, Any] | None = None,
     done_args: Any = None,
 ) -> Any:
-    if isinstance(done_args, str) and done_args:
-        return done_args
-    if isinstance(done_args, (dict, list)):
-        return done_args
+    candidates: List[Any] = [done_args]
     if isinstance(item, dict):
-        raw = item.get("arguments")
-        if isinstance(raw, str) and raw:
-            return raw
-        if isinstance(raw, (dict, list)):
-            return raw
-        raw = item.get("parameters")
-        if isinstance(raw, str) and raw:
-            return raw
-        if isinstance(raw, (dict, list)):
-            return raw
+        candidates.extend([item.get("arguments"), item.get("parameters")])
     if isinstance(pending, dict):
-        raw = pending.get("arguments_done")
+        candidates.append(pending.get("arguments_done"))
+        added_event = pending.get("added_event")
+        if isinstance(added_event, dict):
+            added_item = added_event.get("item")
+            if isinstance(added_item, dict):
+                candidates.extend([added_item.get("arguments"), added_item.get("parameters")])
+        candidates.append(pending.get("argument_buffer"))
+
+    for raw in candidates:
         if isinstance(raw, str) and raw:
             return raw
+        if isinstance(raw, (dict, list)) and raw:
+            return raw
+
+    for raw in candidates:
         if isinstance(raw, (dict, list)):
-            return raw
-        raw = pending.get("argument_buffer")
-        if isinstance(raw, str) and raw:
             return raw
     return None
 
@@ -302,7 +300,7 @@ class ResponsesToolCallStreamNormalizer:
                             item["arguments"] = best_args
                     pending["added_emitted"] = True
                     out.append(added_event)
-                done_event = copy.deepcopy(event)
+                done_event = event.copy()
                 if best_args is not None:
                     done_event["arguments"] = best_args
                 out.append(done_event)
@@ -327,8 +325,11 @@ class ResponsesToolCallStreamNormalizer:
                             added_item["arguments"] = best_args
                     pending["added_emitted"] = True
                     out.append(added_event)
-                done_event = copy.deepcopy(event)
+                done_event = event.copy()
                 done_item = done_event.get("item")
+                if isinstance(done_item, dict):
+                    done_item = done_item.copy()
+                    done_event["item"] = done_item
                 if isinstance(done_item, dict) and best_args is not None:
                     done_item["arguments"] = best_args
                 out.append(done_event)
@@ -404,6 +405,9 @@ def stream_upstream_bytes(
                 except Exception:
                     pass
             event_type = evt.get("type")
+            if evt.get("data") == "[DONE]" or event_type == "[DONE]":
+                yield b"data: [DONE]\n\n"
+                continue
             payload = json.dumps(evt, ensure_ascii=False)
             if isinstance(event_type, str) and event_type.strip():
                 yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")

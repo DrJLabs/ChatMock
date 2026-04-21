@@ -11,6 +11,7 @@ from chatmock.app import create_app
 from chatmock.responses_api import (
     fallback_passthrough_instructions,
     iter_normalized_response_events,
+    stream_upstream_bytes,
 )
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
@@ -1014,6 +1015,68 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[0]["item"]["arguments"], tool_args)
         self.assertEqual(events[1]["arguments"], tool_args)
         self.assertEqual(events[2]["item"]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_prefers_buffered_arguments_over_empty_structured_values(self) -> None:
+        tool_args = "{\"query\":\"from-buffer\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_buffer_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_buffer_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_buffer_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": {},
+                        "item_id": "fc_buffer_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_buffer_1",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": {},
+                            "call_id": "call_buffer_1",
+                            "name": "webSearch",
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["arguments"], tool_args)
+        self.assertEqual(events[2]["item"]["arguments"], tool_args)
+
+    def test_stream_upstream_bytes_preserves_done_sentinel(self) -> None:
+        upstream = FakeUpstream(
+            content=(
+                b"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_done\"}}\n\n"
+                b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_done\"}}\n\n"
+                b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+
+        self.assertIn('event: response.created\ndata: {"type": "response.created", "response": {"id": "resp_done"}}\n\n', body)
+        self.assertIn('event: response.completed\ndata: {"type": "response.completed", "response": {"id": "resp_done"}}\n\n', body)
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
 
 
 if __name__ == "__main__":
