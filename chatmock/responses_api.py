@@ -259,6 +259,34 @@ class ResponsesToolCallStreamNormalizer:
     def __init__(self) -> None:
         self._pending: Dict[str, Dict[str, Any]] = {}
 
+    def _normalize_terminal_response_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return event
+        output = response.get("output")
+        if not isinstance(output, list):
+            return event
+
+        normalized_event = event.copy()
+        normalized_response = response.copy()
+        normalized_output: List[Any] = []
+
+        for raw_item in output:
+            if not isinstance(raw_item, dict):
+                normalized_output.append(raw_item)
+                continue
+            normalized_item = raw_item.copy()
+            key = _tool_call_event_key(normalized_item)
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            best_args = _best_tool_arguments(pending, item=normalized_item)
+            if best_args is not None:
+                normalized_item["arguments"] = best_args
+            normalized_output.append(normalized_item)
+
+        normalized_response["output"] = normalized_output
+        normalized_event["response"] = normalized_response
+        return normalized_event
+
     def process(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
         kind = event.get("type")
         if kind == "response.output_item.added" and _is_buffered_tool_call_event(event):
@@ -347,6 +375,7 @@ class ResponsesToolCallStreamNormalizer:
                     if best_args is not None:
                         item["arguments"] = best_args
                 out.append(added_event)
+            event = self._normalize_terminal_response_event(event)
             self._pending.clear()
             out.append(event)
             return out

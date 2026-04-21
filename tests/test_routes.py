@@ -1078,6 +1078,53 @@ class RouteTests(unittest.TestCase):
         self.assertIn('event: response.completed\ndata: {"type": "response.completed", "response": {"id": "resp_done"}}\n\n', body)
         self.assertTrue(body.endswith("data: [DONE]\n\n"))
 
+    def test_iter_normalized_response_events_normalizes_terminal_response_output_arguments(self) -> None:
+        tool_args = "{\"query\":\"from-terminal-output\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_terminal_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_terminal_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_terminal_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_terminal",
+                            "output": [
+                                {
+                                    "id": "fc_terminal_1",
+                                    "type": "function_call",
+                                    "status": "completed",
+                                    "arguments": "",
+                                    "call_id": "call_terminal_1",
+                                    "name": "webSearch",
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "response.completed")
+        self.assertEqual(events[1]["response"]["output"][0]["arguments"], tool_args)
+
 
 if __name__ == "__main__":
     unittest.main()
