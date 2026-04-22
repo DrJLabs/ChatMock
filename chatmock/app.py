@@ -63,12 +63,8 @@ def create_app(
         remote_addr = request.remote_addr
         allow_admin_external = os.getenv("CHATMOCK_ALLOW_ADMIN_EXTERNAL", "false").lower() == "true"
         allowed_local_addresses = {"127.0.0.1", "::1"}
-        allowed_bridge_prefixes = ("172.17.", "172.18.", "172.19.", "172.20.")
         allowed_bridge_addresses = {"172.17.0.1", "172.18.0.1"}
-        is_allowed_bridge = isinstance(remote_addr, str) and (
-            remote_addr in allowed_bridge_addresses
-            or remote_addr.startswith(allowed_bridge_prefixes)
-        )
+        is_allowed_bridge = isinstance(remote_addr, str) and remote_addr in allowed_bridge_addresses
         is_local = isinstance(remote_addr, str) and remote_addr in allowed_local_addresses
         if not (is_local or is_allowed_bridge or allow_admin_external):
             return jsonify({"error": {"message": "Admin routes are local-only"}}), 403

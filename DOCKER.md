@@ -37,6 +37,19 @@ If `CHATMOCK_ADMIN_TOKEN` is configured, include the header:
 -H "X-ChatMock-Admin-Token: $CHATMOCK_ADMIN_TOKEN"
 ```
 
+By default the admin endpoints only accept:
+
+- loopback clients
+- known Docker host gateway addresses such as `172.17.0.1` and `172.18.0.1`
+
+If your Docker/network setup uses a different host address, set:
+
+```bash
+CHATMOCK_ALLOW_ADMIN_EXTERNAL=true
+```
+
+and rely on `CHATMOCK_ADMIN_TOKEN` for access control.
+
 Example: switch the main service to the ClawMem prompt directory without restarting the container:
 
 ```bash
