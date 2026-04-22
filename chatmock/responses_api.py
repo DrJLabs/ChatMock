@@ -62,7 +62,7 @@ def resolve_effective_instructions(
     model: str,
     config: Dict[str, Any],
 ) -> str:
-    explicit = payload.get("instructions") if endpoint_kind == "responses" else None
+    explicit = payload.get("instructions")
     if isinstance(explicit, str) and explicit.strip():
         return explicit
     if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
@@ -185,25 +185,62 @@ def normalize_responses_payload(
     )
 
 
+@dataclass(frozen=True)
+class SSEFrame:
+    raw: bytes
+    event: Dict[str, Any] | None
+
+
+def _parse_sse_frame(raw_frame: bytes) -> Dict[str, Any] | None:
+    text = raw_frame.decode("utf-8", errors="ignore")
+    data_lines: List[str] = []
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:") :]
+        if payload.startswith(" "):
+            payload = payload[1:]
+        data_lines.append(payload)
+
+    if not data_lines:
+        return None
+
+    data = "\n".join(data_lines).strip()
+    if not data:
+        return None
+    if data == "[DONE]":
+        return {"type": "[DONE]", "data": "[DONE]"}
+    try:
+        evt = json.loads(data)
+    except Exception:
+        return None
+    return evt if isinstance(evt, dict) else None
+
+
+def iter_sse_frames(upstream: Any) -> Iterator[SSEFrame]:
+    buffer = b""
+    for chunk in upstream.iter_content(chunk_size=None):
+        if not chunk:
+            continue
+        if isinstance(chunk, str):
+            chunk = chunk.encode("utf-8")
+        buffer += bytes(chunk).replace(b"\r\n", b"\n")
+        while b"\n\n" in buffer:
+            raw_frame, buffer = buffer.split(b"\n\n", 1)
+            raw_frame += b"\n\n"
+            yield SSEFrame(raw=raw_frame, event=_parse_sse_frame(raw_frame))
+
+    if buffer:
+        raw_frame = buffer if buffer.endswith(b"\n\n") else buffer + b"\n\n"
+        yield SSEFrame(raw=raw_frame, event=_parse_sse_frame(raw_frame))
+
+
 def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
-    for raw in upstream.iter_lines(decode_unicode=False):
-        if not raw:
-            continue
-        line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
-        if not line.startswith("data: "):
-            continue
-        data = line[len("data: ") :].strip()
-        if not data:
-            continue
-        if data == "[DONE]":
-            yield {"type": "[DONE]", "data": "[DONE]"}
-            break
-        try:
-            evt = json.loads(data)
-        except Exception:
-            continue
-        if isinstance(evt, dict):
-            yield evt
+    for frame in iter_sse_frames(upstream):
+        if isinstance(frame.event, dict):
+            yield frame.event
+            if frame.event.get("data") == "[DONE]" or frame.event.get("type") == "[DONE]":
+                break
 
 
 def _tool_call_event_key(item_or_event: Dict[str, Any] | None) -> str | None:
@@ -241,6 +278,11 @@ def _best_tool_arguments(
             added_item = added_event.get("item")
             if isinstance(added_item, dict):
                 candidates.extend([added_item.get("arguments"), added_item.get("parameters")])
+        buffer_parts = pending.get("argument_buffer_parts")
+        if isinstance(buffer_parts, list):
+            buffered = "".join(part for part in buffer_parts if isinstance(part, str) and part)
+            if buffered:
+                candidates.append(buffered)
         candidates.append(pending.get("argument_buffer"))
 
     for raw in candidates:
@@ -296,7 +338,7 @@ class ResponsesToolCallStreamNormalizer:
                 self._pending[key] = {
                     "added_event": copy.deepcopy(event),
                     "added_emitted": False,
-                    "argument_buffer": "",
+                    "argument_buffer_parts": [],
                     "arguments_done": None,
                 }
                 return []
@@ -307,7 +349,9 @@ class ResponsesToolCallStreamNormalizer:
             if pending is not None:
                 delta = event.get("delta")
                 if isinstance(delta, str) and delta:
-                    pending["argument_buffer"] = f"{pending['argument_buffer']}{delta}"
+                    buffer_parts = pending.setdefault("argument_buffer_parts", [])
+                    if isinstance(buffer_parts, list):
+                        buffer_parts.append(delta)
                 return []
 
         if kind == "response.function_call_arguments.done":
@@ -427,20 +471,27 @@ def stream_upstream_bytes(
     on_event: Any | None = None,
 ) -> Iterable[bytes]:
     try:
-        for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
-            if callable(on_event):
-                try:
-                    on_event(evt)
-                except Exception:
-                    pass
-            event_type = evt.get("type")
-            if evt.get("data") == "[DONE]" or event_type == "[DONE]":
-                yield b"data: [DONE]\n\n"
+        normalizer = ResponsesToolCallStreamNormalizer()
+        for frame in iter_sse_frames(upstream):
+            evt = frame.event
+            if not isinstance(evt, dict):
+                yield frame.raw
                 continue
-            payload = json.dumps(evt, ensure_ascii=False)
-            if isinstance(event_type, str) and event_type.strip():
-                yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
-            else:
-                yield f"data: {payload}\n\n".encode("utf-8")
+
+            for normalized in normalizer.process(evt):
+                if callable(on_event):
+                    try:
+                        on_event(normalized)
+                    except Exception:
+                        pass
+                event_type = normalized.get("type")
+                if normalized.get("data") == "[DONE]" or event_type == "[DONE]":
+                    yield frame.raw
+                    continue
+                payload = json.dumps(normalized, ensure_ascii=False)
+                if isinstance(event_type, str) and event_type.strip():
+                    yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
+                else:
+                    yield f"data: {payload}\n\n".encode("utf-8")
     finally:
         upstream.close()

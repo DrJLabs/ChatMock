@@ -41,6 +41,7 @@ class FakeUpstream:
         for event in self._events or []:
             payload = f"data: {json.dumps(event)}"
             yield payload if decode_unicode else payload.encode("utf-8")
+            yield "" if decode_unicode else b""
 
     def iter_content(self, chunk_size=None):
         if self.content:
@@ -181,6 +182,54 @@ class RouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.kwargs["instructions"], fallback_passthrough_instructions())
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserve_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "instructions": "chat instructions",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], "chat instructions")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_completions_preserve_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/completions",
+            json={
+                "model": "gpt-5.4",
+                "instructions": "completion instructions",
+                "prompt": "hi",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], "completion instructions")
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_retry_reuses_resolved_instructions(self, mock_start) -> None:
@@ -1076,6 +1125,23 @@ class RouteTests(unittest.TestCase):
 
         self.assertIn('event: response.created\ndata: {"type": "response.created", "response": {"id": "resp_done"}}\n\n', body)
         self.assertIn('event: response.completed\ndata: {"type": "response.completed", "response": {"id": "resp_done"}}\n\n', body)
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_stream_upstream_bytes_preserves_raw_non_json_sse_frames(self) -> None:
+        upstream = FakeUpstream(
+            content=(
+                b": keepalive\n\n"
+                b"event: custom\ndata: plain-text-payload\n\n"
+                b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_raw\"}}\n\n"
+                b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+
+        self.assertIn(": keepalive\n\n", body)
+        self.assertIn("event: custom\ndata: plain-text-payload\n\n", body)
+        self.assertIn('event: response.completed\ndata: {"type": "response.completed", "response": {"id": "resp_raw"}}\n\n', body)
         self.assertTrue(body.endswith("data: [DONE]\n\n"))
 
     def test_iter_normalized_response_events_normalizes_terminal_response_output_arguments(self) -> None:
