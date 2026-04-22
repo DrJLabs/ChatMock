@@ -125,6 +125,8 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
 
 def load_instances(config_root: Path | str, *, known_profile_ids: set[str]) -> list[dict[str, Any]]:
     config_root_path = Path(config_root)
+    if not config_root_path.exists() or not config_root_path.is_dir():
+        raise FileNotFoundError(f"Instance config directory not found: {config_root_path}")
 
     instances: list[dict[str, Any]] = []
     seen_ids: set[str] = set()

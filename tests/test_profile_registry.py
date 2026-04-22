@@ -95,3 +95,10 @@ class ProfileRegistryTests(unittest.TestCase):
                 profiles = load_profiles()
 
             self.assertEqual([profile["id"] for profile in profiles], ["bare"])
+
+    def test_load_profiles_raises_when_config_directory_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            with self.assertRaisesRegex(FileNotFoundError, "Profile config directory not found"):
+                load_profiles(root / "missing", repo_root=root)

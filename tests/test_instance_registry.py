@@ -103,3 +103,10 @@ class InstanceRegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Invalid port: True"):
                 load_instances(instances_root, known_profile_ids={"bare"})
+
+    def test_load_instances_raises_when_config_directory_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            with self.assertRaisesRegex(FileNotFoundError, "Instance config directory not found"):
+                load_instances(root / "missing", known_profile_ids={"bare"})

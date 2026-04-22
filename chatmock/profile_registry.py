@@ -28,7 +28,7 @@ def _package_root() -> Path:
     return Path(__file__).resolve().parent
 
 
-def _iter_yaml_entries(config_root: Any) -> list[Any]:
+def _iter_yaml_entries(config_root: Path) -> list[Path]:
     return sorted(
         [entry for entry in config_root.iterdir() if entry.is_file() and entry.name.endswith(".yaml")],
         key=lambda entry: entry.name,
@@ -47,6 +47,9 @@ def _default_config_root(repo_root: Path | None) -> Any:
         source_root = repo_root / "config" / "profiles"
         if source_root.exists():
             return source_root
+        packaged_root = repo_root / "chatmock" / "bundled_config" / "profiles"
+        if packaged_root.exists():
+            return packaged_root
         return repo_root / "bundled_config" / "profiles"
     return _package_root() / "bundled_config" / "profiles"
 
@@ -117,8 +120,10 @@ def load_profiles(config_root: Path | str | None = None, *, repo_root: Path | st
     repo_root_path = Path(repo_root) if repo_root is not None else None
     if repo_root_path is None:
         root = _default_repo_root()
-        repo_root_path = root if (root / "config" / "profiles").exists() else _package_root()
+        repo_root_path = root
     config_root_path = Path(config_root) if config_root is not None else _default_config_root(repo_root_path)
+    if not config_root_path.exists() or not config_root_path.is_dir():
+        raise FileNotFoundError(f"Profile config directory not found: {config_root_path}")
 
     profiles: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
