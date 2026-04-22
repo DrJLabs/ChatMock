@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, List
+from typing import Any, Dict, Iterable, Iterator, List, Literal
 
 from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
 from .fast_mode import ServiceTierResolution, resolve_service_tier
@@ -52,6 +53,21 @@ def fallback_passthrough_instructions() -> str:
         "Always include every required argument before making the tool call. "
         "If a tool call returns a schema error, inspect the schema and try again with corrected arguments."
     )
+
+
+def resolve_effective_instructions(
+    *,
+    endpoint_kind: Literal["responses", "chat_completions", "completions"],
+    payload: Dict[str, Any],
+    model: str,
+    config: Dict[str, Any],
+) -> str:
+    explicit = payload.get("instructions")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit
+    if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
+        return instructions_for_model(config, model)
+    return fallback_passthrough_instructions()
 
 
 def extract_client_session_id(headers: Any) -> str | None:
@@ -107,13 +123,12 @@ def normalize_responses_payload(
     if "store" not in normalized:
         normalized["store"] = False
 
-    instructions = normalized.get("instructions")
-    if not isinstance(instructions, str) or not instructions.strip():
-        if bool(config.get("INJECT_DEFAULT_INSTRUCTIONS", True)):
-            instructions = instructions_for_model(config, normalized_model)
-        else:
-            instructions = fallback_passthrough_instructions()
-        normalized["instructions"] = instructions
+    normalized["instructions"] = resolve_effective_instructions(
+        endpoint_kind="responses",
+        payload=normalized,
+        model=normalized_model,
+        config=config,
+    )
 
     reasoning_effort = config.get("REASONING_EFFORT", "medium")
     reasoning_summary = config.get("REASONING_SUMMARY", "auto")
@@ -156,7 +171,7 @@ def normalize_responses_payload(
     normalized.pop("fast_mode", None)
 
     input_items = _input_items_for_session(normalized.get("input"))
-    session_id = ensure_session_id(instructions, input_items, client_session_id)
+    session_id = ensure_session_id(normalized["instructions"], input_items, client_session_id)
     prompt_cache_key = normalized.get("prompt_cache_key")
     if not isinstance(prompt_cache_key, str) or not prompt_cache_key.strip():
         normalized["prompt_cache_key"] = session_id
@@ -170,24 +185,304 @@ def normalize_responses_payload(
     )
 
 
-def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
-    for raw in upstream.iter_lines(decode_unicode=False):
-        if not raw:
+@dataclass(frozen=True)
+class SSEFrame:
+    raw: bytes
+    event: Dict[str, Any] | None
+
+
+def _parse_sse_frame(raw_frame: bytes) -> Dict[str, Any] | None:
+    text = raw_frame.replace(b"\r\n", b"\n").replace(b"\r", b"\n").decode("utf-8", errors="ignore")
+    data_lines: List[str] = []
+    event_type: str | None = None
+    for line in text.splitlines():
+        if line.startswith("event:"):
+            payload = line[len("event:") :]
+            if payload.startswith(" "):
+                payload = payload[1:]
+            if payload.strip():
+                event_type = payload.strip()
             continue
-        line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else raw
-        if not line.startswith("data: "):
+        if not line.startswith("data:"):
             continue
-        data = line[len("data: ") :].strip()
-        if not data or data == "[DONE]":
-            if data == "[DONE]":
+        payload = line[len("data:") :]
+        if payload.startswith(" "):
+            payload = payload[1:]
+        data_lines.append(payload)
+
+    if not data_lines:
+        return None
+
+    data = "\n".join(data_lines).strip()
+    if not data:
+        return None
+    if data == "[DONE]":
+        return {"type": "[DONE]", "data": "[DONE]"}
+    try:
+        evt = json.loads(data)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(evt, dict):
+        return None
+    if event_type and not isinstance(evt.get("type"), str):
+        evt = evt.copy()
+        evt["type"] = event_type
+    return evt
+
+
+def _split_sse_frame(buffer: bytes) -> tuple[bytes, bytes] | None:
+    matches: List[tuple[int, bytes]] = []
+    for delimiter in (b"\r\n\r\n", b"\n\r\n", b"\r\n\n", b"\n\n", b"\r\r"):
+        idx = buffer.find(delimiter)
+        if idx >= 0:
+            matches.append((idx, delimiter))
+    if not matches:
+        return None
+    idx, delimiter = min(matches, key=lambda item: item[0])
+    end = idx + len(delimiter)
+    return buffer[:end], buffer[end:]
+
+
+def iter_sse_frames(upstream: Any) -> Iterator[SSEFrame]:
+    buffer = b""
+    for chunk in upstream.iter_content(chunk_size=None):
+        if not chunk:
+            continue
+        if isinstance(chunk, str):
+            chunk = chunk.encode("utf-8")
+        buffer += bytes(chunk)
+        while True:
+            split = _split_sse_frame(buffer)
+            if split is None:
                 break
-            continue
-        try:
-            evt = json.loads(data)
-        except Exception:
-            continue
-        if isinstance(evt, dict):
-            yield evt
+            raw_frame, buffer = split
+            yield SSEFrame(raw=raw_frame, event=_parse_sse_frame(raw_frame))
+
+    if buffer:
+        raw_frame = buffer if buffer.endswith(b"\n\n") else buffer + b"\n\n"
+        yield SSEFrame(raw=raw_frame, event=_parse_sse_frame(raw_frame))
+
+
+def iter_sse_event_payloads(upstream: Any) -> Iterator[Dict[str, Any]]:
+    for frame in iter_sse_frames(upstream):
+        if isinstance(frame.event, dict):
+            yield frame.event
+            if frame.event.get("data") == "[DONE]" or frame.event.get("type") == "[DONE]":
+                break
+
+
+def _tool_call_event_key(item_or_event: Dict[str, Any] | None) -> str | None:
+    if not isinstance(item_or_event, dict):
+        return None
+    item_id = item_or_event.get("id")
+    if isinstance(item_id, str) and item_id.strip():
+        return item_id
+    call_id = item_or_event.get("call_id")
+    if isinstance(call_id, str) and call_id.strip():
+        return call_id
+    return None
+
+
+def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
+    item = event.get("item")
+    if not isinstance(item, dict):
+        return False
+    return item.get("type") in ("function_call", "web_search_call", "web_search_preview_call")
+
+
+def _best_tool_arguments(
+    pending: Dict[str, Any] | None,
+    *,
+    item: Dict[str, Any] | None = None,
+    done_args: Any = None,
+) -> Any:
+    candidates: List[Any] = [done_args]
+    if isinstance(item, dict):
+        candidates.extend([item.get("arguments"), item.get("parameters")])
+    if isinstance(pending, dict):
+        candidates.append(pending.get("arguments_done"))
+        added_event = pending.get("added_event")
+        if isinstance(added_event, dict):
+            added_item = added_event.get("item")
+            if isinstance(added_item, dict):
+                candidates.extend([added_item.get("arguments"), added_item.get("parameters")])
+        buffer_parts = pending.get("argument_buffer_parts")
+        if isinstance(buffer_parts, list):
+            buffered = "".join(part for part in buffer_parts if isinstance(part, str) and part)
+            if buffered:
+                candidates.append(buffered)
+
+    for raw in candidates:
+        if isinstance(raw, str) and raw and raw.strip() not in ("{}", "[]", "null"):
+            return raw
+        if isinstance(raw, (dict, list)) and raw:
+            return raw
+
+    for raw in candidates:
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, (dict, list)):
+            return raw
+    return None
+
+
+class ResponsesToolCallStreamNormalizer:
+    def __init__(self) -> None:
+        self._pending: Dict[str, Dict[str, Any]] = {}
+
+    def flush(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for pending in self._pending.values():
+            if pending.get("added_emitted"):
+                continue
+            added_event = copy.deepcopy(pending["added_event"])
+            item = added_event.get("item")
+            if isinstance(item, dict):
+                best_args = _best_tool_arguments(pending, item=item)
+                if best_args is not None:
+                    item["arguments"] = best_args
+            out.append(added_event)
+        self._pending.clear()
+        return out
+
+    def _normalize_terminal_response_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return event
+        output = response.get("output")
+        if not isinstance(output, list):
+            return event
+
+        normalized_event = event.copy()
+        normalized_response = response.copy()
+        normalized_output: List[Any] = []
+
+        for raw_item in output:
+            if not isinstance(raw_item, dict):
+                normalized_output.append(raw_item)
+                continue
+            normalized_item = raw_item.copy()
+            key = _tool_call_event_key(normalized_item)
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            best_args = _best_tool_arguments(pending, item=normalized_item)
+            if best_args is not None:
+                normalized_item["arguments"] = best_args
+            normalized_output.append(normalized_item)
+
+        normalized_response["output"] = normalized_output
+        normalized_event["response"] = normalized_response
+        return normalized_event
+
+    def process(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
+        kind = event.get("type")
+        if kind == "response.output_item.added" and _is_buffered_tool_call_event(event):
+            item = event.get("item")
+            key = _tool_call_event_key(item)
+            if key:
+                self._pending[key] = {
+                    "added_event": copy.deepcopy(event),
+                    "added_emitted": False,
+                    "argument_buffer_parts": [],
+                    "arguments_done": None,
+                }
+                return []
+
+        if kind == "response.function_call_arguments.delta":
+            key = event.get("item_id")
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            if pending is not None:
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    buffer_parts = pending.setdefault("argument_buffer_parts", [])
+                    if isinstance(buffer_parts, list):
+                        buffer_parts.append(delta)
+                return []
+
+        if kind == "response.function_call_arguments.done":
+            key = event.get("item_id")
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            if pending is not None:
+                pending["arguments_done"] = event.get("arguments")
+                out: List[Dict[str, Any]] = []
+                best_args = _best_tool_arguments(
+                    pending,
+                    done_args=event.get("arguments"),
+                )
+                if not pending["added_emitted"]:
+                    added_event = copy.deepcopy(pending["added_event"])
+                    item = added_event.get("item")
+                    if isinstance(item, dict):
+                        if best_args is not None:
+                            item["arguments"] = best_args
+                    pending["added_emitted"] = True
+                    out.append(added_event)
+                done_event = event.copy()
+                if best_args is not None:
+                    done_event["arguments"] = best_args
+                out.append(done_event)
+                return out
+
+        if kind == "response.output_item.done" and _is_buffered_tool_call_event(event):
+            item = event.get("item")
+            key = _tool_call_event_key(item)
+            pending = self._pending.get(key) if isinstance(key, str) else None
+            if pending is not None:
+                out = []
+                best_args = _best_tool_arguments(
+                    pending,
+                    item=item if isinstance(item, dict) else None,
+                    done_args=pending.get("arguments_done"),
+                )
+                if not pending["added_emitted"]:
+                    added_event = copy.deepcopy(pending["added_event"])
+                    added_item = added_event.get("item")
+                    if isinstance(added_item, dict):
+                        if best_args is not None:
+                            added_item["arguments"] = best_args
+                    pending["added_emitted"] = True
+                    out.append(added_event)
+                done_event = event.copy()
+                done_item = done_event.get("item")
+                if isinstance(done_item, dict):
+                    done_item = done_item.copy()
+                    done_event["item"] = done_item
+                if isinstance(done_item, dict) and best_args is not None:
+                    done_item["arguments"] = best_args
+                out.append(done_event)
+                return out
+
+        if kind in ("response.completed", "response.failed", "error") and self._pending:
+            out: List[Dict[str, Any]] = []
+            for pending in self._pending.values():
+                if pending.get("added_emitted"):
+                    continue
+                added_event = copy.deepcopy(pending["added_event"])
+                item = added_event.get("item")
+                if isinstance(item, dict):
+                    best_args = _best_tool_arguments(pending, item=item)
+                    if best_args is not None:
+                        item["arguments"] = best_args
+                out.append(added_event)
+            event = self._normalize_terminal_response_event(event)
+            self._pending.clear()
+            out.append(event)
+            return out
+
+        return [event]
+
+
+def iter_normalized_response_events(events: Iterable[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
+    normalizer = ResponsesToolCallStreamNormalizer()
+    for event in events:
+        if event.get("data") == "[DONE]" or event.get("type") == "[DONE]":
+            for normalized in normalizer.flush():
+                yield normalized
+            yield event
+            return
+        for normalized in normalizer.process(event):
+            yield normalized
+    for normalized in normalizer.flush():
+        yield normalized
 
 
 def aggregate_response_from_sse(
@@ -198,7 +493,7 @@ def aggregate_response_from_sse(
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
     try:
-        for evt in iter_sse_event_payloads(upstream):
+        for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
             if callable(on_event):
                 try:
                     on_event(evt)
@@ -226,32 +521,41 @@ def stream_upstream_bytes(
     *,
     on_event: Any | None = None,
 ) -> Iterable[bytes]:
-    buffer = b""
     try:
-        for chunk in upstream.iter_content(chunk_size=None):
-            if chunk:
+        normalizer = ResponsesToolCallStreamNormalizer()
+        for frame in iter_sse_frames(upstream):
+            evt = frame.event
+            if not isinstance(evt, dict):
+                yield frame.raw
+                continue
+
+            for normalized in normalizer.process(evt):
                 if callable(on_event):
-                    if isinstance(chunk, bytes):
-                        buffer += chunk
-                    else:
-                        buffer += str(chunk).encode("utf-8", errors="ignore")
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        line = line.rstrip(b"\r")
-                        if not line.startswith(b"data: "):
-                            continue
-                        data = line[len(b"data: ") :].strip()
-                        if not data or data == b"[DONE]":
-                            continue
-                        try:
-                            evt = json.loads(data.decode("utf-8", errors="ignore"))
-                        except Exception:
-                            evt = None
-                        if isinstance(evt, dict):
+                    try:
+                        on_event(normalized)
+                    except Exception:
+                        pass
+                event_type = normalized.get("type")
+                if normalized.get("data") == "[DONE]" or event_type == "[DONE]":
+                    for flushed in normalizer.flush():
+                        if callable(on_event):
                             try:
-                                on_event(evt)
+                                on_event(flushed)
                             except Exception:
                                 pass
-                yield chunk
+                        payload = json.dumps(flushed, ensure_ascii=False)
+                        yield f"data: {payload}\n\n".encode("utf-8")
+                    yield frame.raw
+                    return
+                payload = json.dumps(normalized, ensure_ascii=False)
+                yield f"data: {payload}\n\n".encode("utf-8")
+        for normalized in normalizer.flush():
+            if callable(on_event):
+                try:
+                    on_event(normalized)
+                except Exception:
+                    pass
+            payload = json.dumps(normalized, ensure_ascii=False)
+            yield f"data: {payload}\n\n".encode("utf-8")
     finally:
         upstream.close()

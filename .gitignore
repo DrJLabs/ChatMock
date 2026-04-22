@@ -21,4 +21,3 @@ dist/
 # OS clutter
 .DS_Store
 .serena/
-docker-compose.yml

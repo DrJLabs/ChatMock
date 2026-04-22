@@ -8,6 +8,11 @@ import unittest
 from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.responses_api import (
+    fallback_passthrough_instructions,
+    iter_normalized_response_events,
+    stream_upstream_bytes,
+)
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
@@ -29,9 +34,14 @@ class FakeUpstream:
         self.text = text
 
     def iter_lines(self, decode_unicode: bool = False):
+        if self.content:
+            for line in self.content.splitlines():
+                yield line.decode("utf-8") if decode_unicode else line
+            return
         for event in self._events or []:
             payload = f"data: {json.dumps(event)}"
             yield payload if decode_unicode else payload.encode("utf-8")
+            yield "" if decode_unicode else b""
 
     def iter_content(self, chunk_size=None):
         if self.content:
@@ -46,6 +56,24 @@ class FakeUpstream:
 
     def close(self) -> None:
         return None
+
+
+def decode_sse_events(body: str) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for block in body.split("\n\n"):
+        if not block.strip():
+            continue
+        for line in block.splitlines():
+            if not line.startswith("data: "):
+                continue
+            payload = line[len("data: ") :]
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
+    return events
 
 
 class RouteTests(unittest.TestCase):
@@ -110,6 +138,131 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.args[0], "gpt-5.4")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_use_fallback_instructions_when_default_injection_disabled(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], fallback_passthrough_instructions())
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_completions_use_fallback_instructions_when_default_injection_disabled(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = client.post(
+            "/v1/completions",
+            json={"model": "gpt-5.4", "prompt": "hi"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], fallback_passthrough_instructions())
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_preserve_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "instructions": "chat instructions",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], "chat instructions")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_completions_preserve_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/completions",
+            json={
+                "model": "gpt-5.4",
+                "instructions": "completion instructions",
+                "prompt": "hi",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["instructions"], "completion instructions")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_retry_reuses_resolved_instructions(self, mock_start) -> None:
+        app = create_app(inject_default_instructions=False)
+        client = app.test_client()
+        mock_start.side_effect = [
+            (
+                FakeUpstream(status_code=400, content=b'{"error": {"message": "tool reject"}}', text='tool reject'),
+                None,
+            ),
+            (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-retry"}},
+                    ]
+                ),
+                None,
+            ),
+        ]
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "messages": [{"role": "user", "content": "hi"}],
+                "responses_tools": [{"type": "web_search"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_count, 2)
+        self.assertEqual(mock_start.call_args_list[1].kwargs["instructions"], fallback_passthrough_instructions())
 
     @patch("chatmock.routes_ollama.start_upstream_request")
     def test_ollama_chat(self, mock_start) -> None:
@@ -286,6 +439,39 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         outbound_payload = mock_start.call_args.args[0]
         self.assertEqual(outbound_payload["model"], "gpt-5.4")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_explicit_instructions(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_explicit", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_explicit",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "instructions": "custom instructions", "input": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        outbound_payload = mock_start.call_args.args[0]
+        self.assertEqual(outbound_payload["instructions"], "custom instructions")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_strips_unsupported_max_output_tokens(self, mock_start) -> None:
@@ -546,6 +732,76 @@ class RouteTests(unittest.TestCase):
         self.assertIn("response.output_text.delta", response.get_data(as_text=True))
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_stream_normalizes_tool_call_added_arguments(self, mock_start) -> None:
+        tool_args = "{\"query\":\"today's weather in Kingston, Tennessee\",\"chatHistory\":[]}"
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_tool", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_tool_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_tool_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_tool_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": "",
+                        "item_id": "fc_tool_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_tool_1",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": "",
+                            "call_id": "call_tool_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {"id": "resp_tool", "object": "response", "status": "completed", "output": []},
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "stream": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        events = decode_sse_events(response.get_data(as_text=True))
+        self.assertEqual(events[0]["type"], "response.created")
+        self.assertEqual(events[1]["type"], "response.output_item.added")
+        self.assertEqual(events[1]["item"]["arguments"], tool_args)
+        self.assertEqual(events[2]["type"], "response.function_call_arguments.done")
+        self.assertEqual(events[2]["arguments"], tool_args)
+        self.assertEqual(events[3]["type"], "response.output_item.done")
+        self.assertEqual(events[3]["item"]["arguments"], tool_args)
+        self.assertEqual(events[4]["type"], "response.completed")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:
         response = self.client.post(
             "/v1/responses",
@@ -652,6 +908,534 @@ class RouteTests(unittest.TestCase):
             follow_up["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_normalizes_tool_call_added_arguments(self, mock_connect, _mock_auth) -> None:
+        tool_args = "{\"path\":\"hello-2026-04-15.md\",\"content\":\"hello\"}"
+
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_tool"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.added",
+                            "item": {
+                                "id": "fc_ws_tool_1",
+                                "type": "function_call",
+                                "status": "in_progress",
+                                "arguments": "",
+                                "call_id": "call_ws_tool_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.function_call_arguments.delta",
+                            "delta": tool_args,
+                            "item_id": "fc_ws_tool_1",
+                            "output_index": 0,
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.function_call_arguments.done",
+                            "arguments": "",
+                            "item_id": "fc_ws_tool_1",
+                            "output_index": 0,
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.done",
+                            "item": {
+                                "id": "fc_ws_tool_1",
+                                "type": "function_call",
+                                "status": "completed",
+                                "arguments": "",
+                                "call_id": "call_ws_tool_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_tool"}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            created = json.loads(client.recv())
+            added = json.loads(client.recv())
+            args_done = json.loads(client.recv())
+            item_done = json.loads(client.recv())
+            completed = json.loads(client.recv())
+
+        self.assertEqual(created["type"], "response.created")
+        self.assertEqual(added["type"], "response.output_item.added")
+        self.assertEqual(added["item"]["arguments"], tool_args)
+        self.assertEqual(args_done["type"], "response.function_call_arguments.done")
+        self.assertEqual(args_done["arguments"], tool_args)
+        self.assertEqual(item_done["type"], "response.output_item.done")
+        self.assertEqual(item_done["item"]["arguments"], tool_args)
+        self.assertEqual(completed["type"], "response.completed")
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_flushes_buffered_tool_call_before_unexpected_close(self, mock_connect, _mock_auth) -> None:
+        tool_args = "{\"path\":\"flush-before-close.md\",\"content\":\"hello\"}"
+
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_flush"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.added",
+                            "item": {
+                                "id": "fc_ws_flush_1",
+                                "type": "function_call",
+                                "status": "in_progress",
+                                "arguments": "",
+                                "call_id": "call_ws_flush_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.function_call_arguments.delta",
+                            "delta": tool_args,
+                            "item_id": "fc_ws_flush_1",
+                            "output_index": 0,
+                        }
+                    ),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                if self._messages:
+                    return self._messages.pop(0)
+                return None
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            created = json.loads(client.recv())
+            added = json.loads(client.recv())
+            error = json.loads(client.recv())
+
+        self.assertEqual(created["type"], "response.created")
+        self.assertEqual(added["type"], "response.output_item.added")
+        self.assertEqual(added["item"]["arguments"], tool_args)
+        self.assertEqual(error["type"], "error")
+        self.assertIn("closed unexpectedly", error["error"]["message"])
+
+    def test_iter_normalized_response_events_buffers_web_search_preview_call(self) -> None:
+        tool_args = "{\"query\":\"preview me\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_preview_1",
+                            "type": "web_search_preview_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_preview_1",
+                            "name": "webSearchPreview",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_preview_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": "",
+                        "item_id": "fc_preview_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_preview_1",
+                            "type": "web_search_preview_call",
+                            "status": "completed",
+                            "arguments": "",
+                            "call_id": "call_preview_1",
+                            "name": "webSearchPreview",
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual([event["type"] for event in events], [
+            "response.output_item.added",
+            "response.function_call_arguments.done",
+            "response.output_item.done",
+        ])
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["arguments"], tool_args)
+        self.assertEqual(events[2]["item"]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_prefers_buffered_arguments_over_empty_structured_values(self) -> None:
+        tool_args = "{\"query\":\"from-buffer\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_buffer_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_buffer_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_buffer_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "arguments": {},
+                        "item_id": "fc_buffer_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_buffer_1",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": {},
+                            "call_id": "call_buffer_1",
+                            "name": "webSearch",
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["arguments"], tool_args)
+        self.assertEqual(events[2]["item"]["arguments"], tool_args)
+
+    def test_stream_upstream_bytes_preserves_done_sentinel(self) -> None:
+        upstream = FakeUpstream(
+            content=(
+                b"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_done\"}}\n\n"
+                b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_done\"}}\n\n"
+                b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual(events[0]["type"], "response.created")
+        self.assertEqual(events[0]["response"]["id"], "resp_done")
+        self.assertEqual(events[1]["type"], "response.completed")
+        self.assertEqual(events[1]["response"]["id"], "resp_done")
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_stream_upstream_bytes_preserves_raw_non_json_sse_frames(self) -> None:
+        upstream = FakeUpstream(
+            content=(
+                b": keepalive\n\n"
+                b"event: custom\ndata: plain-text-payload\n\n"
+                b"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_raw\"}}\n\n"
+                b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertIn(": keepalive\n\n", body)
+        self.assertIn("event: custom\ndata: plain-text-payload\n\n", body)
+        self.assertEqual(events[0]["type"], "response.completed")
+        self.assertEqual(events[0]["response"]["id"], "resp_raw")
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_stream_upstream_bytes_flushes_buffered_tool_call_before_done(self) -> None:
+        tool_args = "{\"query\":\"flush-before-done\"}"
+        upstream = FakeUpstream(
+            content=(
+                b"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_done_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_done_1\",\"name\":\"webSearch\"}}\n\n"
+                + f"data: {json.dumps({'type': 'response.function_call_arguments.delta', 'delta': tool_args, 'item_id': 'fc_done_1', 'output_index': 0})}\n\n".encode("utf-8")
+                + b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+        self.assertEqual(len(events), 1)
+
+    def test_iter_sse_frames_handles_crlf_delimiter_split_across_chunks(self) -> None:
+        class ChunkedUpstream(FakeUpstream):
+            def __init__(self, chunks: list[bytes]) -> None:
+                super().__init__(events=[])
+                self._chunks = chunks
+
+            def iter_content(self, chunk_size=None):
+                for chunk in self._chunks:
+                    yield chunk
+
+        upstream = ChunkedUpstream(
+            [
+                b'data: {"type":"response.created","response":{"id":"resp_crlf"}}\r\n\r',
+                b'\ndata: {"type":"response.completed","response":{"id":"resp_crlf"}}\r\n\r\n',
+                b'data: [DONE]\r\n\r\n',
+            ]
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual([event["type"] for event in events], ["response.created", "response.completed"])
+        self.assertTrue(body.endswith("data: [DONE]\r\n\r\n") or body.endswith("data: [DONE]\n\n"))
+
+    def test_iter_sse_frames_handles_mixed_blank_line_delimiters(self) -> None:
+        class ChunkedUpstream(FakeUpstream):
+            def __init__(self, chunks: list[bytes]) -> None:
+                super().__init__(events=[])
+                self._chunks = chunks
+
+            def iter_content(self, chunk_size=None):
+                for chunk in self._chunks:
+                    yield chunk
+
+        upstream = ChunkedUpstream(
+            [
+                b'data: {"type":"response.created","response":{"id":"resp_mixed"}}\n\r\n',
+                b'data: {"type":"response.completed","response":{"id":"resp_mixed"}}\r\n\n',
+                b'data: [DONE]\n\n',
+            ]
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual([event["type"] for event in events], ["response.created", "response.completed"])
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_iter_normalized_response_events_normalizes_terminal_response_output_arguments(self) -> None:
+        tool_args = "{\"query\":\"from-terminal-output\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_terminal_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_terminal_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_terminal_1",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_terminal",
+                            "output": [
+                                {
+                                    "id": "fc_terminal_1",
+                                    "type": "function_call",
+                                    "status": "completed",
+                                    "arguments": "",
+                                    "call_id": "call_terminal_1",
+                                    "name": "webSearch",
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "response.completed")
+        self.assertEqual(events[1]["response"]["output"][0]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_keeps_pending_state_for_completed_after_item_done(self) -> None:
+        tool_args = "{\"query\":\"from-output-item-done\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_terminal_2",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_terminal_2",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_terminal_2",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_terminal_2",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": "",
+                            "call_id": "call_terminal_2",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_terminal_2",
+                            "output": [
+                                {
+                                    "id": "fc_terminal_2",
+                                    "type": "function_call",
+                                    "status": "completed",
+                                    "arguments": "",
+                                    "call_id": "call_terminal_2",
+                                    "name": "webSearch",
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "response.output_item.done")
+        self.assertEqual(events[1]["item"]["arguments"], tool_args)
+        self.assertEqual(events[2]["type"], "response.completed")
+        self.assertEqual(events[2]["response"]["output"][0]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_flushes_before_done_and_stops(self) -> None:
+        tool_args = "{\"query\":\"done-stop\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_done_stop_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_done_stop_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_done_stop_1",
+                        "output_index": 0,
+                    },
+                    {"type": "[DONE]", "data": "[DONE]"},
+                    {
+                        "type": "response.output_text.delta",
+                        "delta": "should-not-be-emitted",
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "[DONE]")
+        self.assertEqual(len(events), 2)
 
 
 if __name__ == "__main__":
