@@ -425,7 +425,7 @@ class ResponsesToolCallStreamNormalizer:
         if kind == "response.output_item.done" and _is_buffered_tool_call_event(event):
             item = event.get("item")
             key = _tool_call_event_key(item)
-            pending = self._pending.pop(key, None) if isinstance(key, str) else None
+            pending = self._pending.get(key) if isinstance(key, str) else None
             if pending is not None:
                 out = []
                 best_args = _best_tool_arguments(
@@ -532,6 +532,14 @@ def stream_upstream_bytes(
                         pass
                 event_type = normalized.get("type")
                 if normalized.get("data") == "[DONE]" or event_type == "[DONE]":
+                    for flushed in normalizer.flush():
+                        if callable(on_event):
+                            try:
+                                on_event(flushed)
+                            except Exception:
+                                pass
+                        payload = json.dumps(flushed, ensure_ascii=False)
+                        yield f"data: {payload}\n\n".encode("utf-8")
                     yield frame.raw
                     continue
                 payload = json.dumps(normalized, ensure_ascii=False)

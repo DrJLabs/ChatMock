@@ -1228,6 +1228,23 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[0]["response"]["id"], "resp_raw")
         self.assertTrue(body.endswith("data: [DONE]\n\n"))
 
+    def test_stream_upstream_bytes_flushes_buffered_tool_call_before_done(self) -> None:
+        tool_args = "{\"query\":\"flush-before-done\"}"
+        upstream = FakeUpstream(
+            content=(
+                b"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_done_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_done_1\",\"name\":\"webSearch\"}}\n\n"
+                + f"data: {json.dumps({'type': 'response.function_call_arguments.delta', 'delta': tool_args, 'item_id': 'fc_done_1', 'output_index': 0})}\n\n".encode("utf-8")
+                + b"data: [DONE]\n\n"
+            )
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
     def test_iter_sse_frames_handles_crlf_delimiter_split_across_chunks(self) -> None:
         class ChunkedUpstream(FakeUpstream):
             def __init__(self, chunks: list[bytes]) -> None:
@@ -1322,6 +1339,66 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[0]["item"]["arguments"], tool_args)
         self.assertEqual(events[1]["type"], "response.completed")
         self.assertEqual(events[1]["response"]["output"][0]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_keeps_pending_state_for_completed_after_item_done(self) -> None:
+        tool_args = "{\"query\":\"from-output-item-done\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_terminal_2",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_terminal_2",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_terminal_2",
+                        "output_index": 0,
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "fc_terminal_2",
+                            "type": "function_call",
+                            "status": "completed",
+                            "arguments": "",
+                            "call_id": "call_terminal_2",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_terminal_2",
+                            "output": [
+                                {
+                                    "id": "fc_terminal_2",
+                                    "type": "function_call",
+                                    "status": "completed",
+                                    "arguments": "",
+                                    "call_id": "call_terminal_2",
+                                    "name": "webSearch",
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "response.output_item.done")
+        self.assertEqual(events[1]["item"]["arguments"], tool_args)
+        self.assertEqual(events[2]["type"], "response.completed")
+        self.assertEqual(events[2]["response"]["output"][0]["arguments"], tool_args)
 
 
 if __name__ == "__main__":
