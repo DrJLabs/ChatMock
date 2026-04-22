@@ -47,6 +47,44 @@ def _read_prompt_text(path: Path) -> str:
     return content
 
 
+def _resolve_static_prompt_config() -> dict[str, str | None]:
+    explicit_prompt_dir = os.getenv("CHATGPT_LOCAL_PROMPT_DIR")
+    explicit_base = os.getenv("CHATGPT_LOCAL_PROMPT_BASE_PATH")
+    explicit_codex = os.getenv("CHATGPT_LOCAL_PROMPT_CODEX_PATH")
+    if isinstance(explicit_prompt_dir, str) and explicit_prompt_dir.strip():
+        prompt_dir = Path(explicit_prompt_dir.strip()).expanduser()
+        base_path = prompt_dir / "prompt.md"
+        codex_path = prompt_dir / "prompt_gpt5_codex.md"
+        return {
+            "prompt_dir": str(prompt_dir),
+            "base_prompt_path": str(base_path),
+            "codex_prompt_path": str(codex_path if codex_path.exists() else base_path),
+        }
+    if isinstance(explicit_base, str) and explicit_base.strip():
+        base_path = Path(explicit_base.strip()).expanduser()
+        codex_path = (
+            Path(explicit_codex.strip()).expanduser()
+            if isinstance(explicit_codex, str) and explicit_codex.strip()
+            else base_path
+        )
+        return {
+            "prompt_dir": str(base_path.parent),
+            "base_prompt_path": str(base_path),
+            "codex_prompt_path": str(codex_path),
+        }
+    for candidate in _candidate_prompt_paths("prompt.md"):
+        if not candidate:
+            continue
+        codex_candidate = candidate.with_name("prompt_gpt5_codex.md")
+        if candidate.exists():
+            return {
+                "prompt_dir": str(candidate.parent),
+                "base_prompt_path": str(candidate),
+                "codex_prompt_path": str(codex_candidate if codex_candidate.exists() else candidate),
+            }
+    raise FileNotFoundError("Failed to locate prompt.md via env, package paths, or CWD.")
+
+
 @dataclass(frozen=True)
 class PromptConfigState:
     prompt_dir: str | None
@@ -77,37 +115,15 @@ class PromptManager:
         self.reload()
 
     def _resolve_legacy_defaults(self) -> dict[str, str | None]:
-        explicit_prompt_dir = os.getenv("CHATGPT_LOCAL_PROMPT_DIR")
-        explicit_base = os.getenv("CHATGPT_LOCAL_PROMPT_BASE_PATH")
-        explicit_codex = os.getenv("CHATGPT_LOCAL_PROMPT_CODEX_PATH")
-        if isinstance(explicit_prompt_dir, str) and explicit_prompt_dir.strip():
-            return self._normalize_config({"prompt_dir": explicit_prompt_dir.strip()})
-        if isinstance(explicit_base, str) and explicit_base.strip():
-            return self._normalize_config(
-                {
-                    "base_prompt_path": explicit_base.strip(),
-                    "codex_prompt_path": explicit_codex.strip() if isinstance(explicit_codex, str) and explicit_codex.strip() else None,
-                }
-            )
-
-        for candidate in _candidate_prompt_paths("prompt.md"):
-            if not candidate:
-                continue
-            codex_candidate = candidate.with_name("prompt_gpt5_codex.md")
-            if candidate.exists():
-                return self._normalize_config(
-                    {
-                        "prompt_dir": str(candidate.parent),
-                        "base_prompt_path": str(candidate),
-                        "codex_prompt_path": str(codex_candidate if codex_candidate.exists() else candidate),
-                    }
-                )
-        raise FileNotFoundError("Failed to locate prompt.md via env, package paths, or CWD.")
+        return self._normalize_config(_resolve_static_prompt_config())
 
     def _load_persisted_config(self) -> dict[str, Any] | None:
         if not self._config_path.exists():
             return None
-        data = json.loads(self._config_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self._config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Prompt config at {self._config_path} is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):
             raise ValueError(f"Prompt config at {self._config_path} is not a JSON object")
         return data
@@ -152,9 +168,11 @@ class PromptManager:
             "base_prompt_path": config["base_prompt_path"],
             "codex_prompt_path": config["codex_prompt_path"],
         }
-        self._config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temp_path = self._config_path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(self._config_path)
 
-    def reload(self) -> PromptConfigState:
+    def reload(self, *, save_defaults: bool = False) -> PromptConfigState:
         with self._lock:
             persisted = self._load_persisted_config()
             if persisted is None:
@@ -163,7 +181,8 @@ class PromptManager:
                     normalized = self._normalize_config(seed)
                 else:
                     normalized = self._resolve_legacy_defaults()
-                self._write_config(normalized)
+                if save_defaults:
+                    self._write_config(normalized)
             else:
                 normalized = self._normalize_config(persisted)
             base_text = _read_prompt_text(Path(normalized["base_prompt_path"]))
@@ -177,6 +196,18 @@ class PromptManager:
                 loaded_at=time.time(),
             )
             return self._state
+
+    def persist_defaults(self) -> PromptConfigState:
+        with self._lock:
+            state = self.reload(save_defaults=False)
+            self._write_config(
+                {
+                    "prompt_dir": state.prompt_dir,
+                    "base_prompt_path": state.base_prompt_path,
+                    "codex_prompt_path": state.codex_prompt_path,
+                }
+            )
+            return state
 
     def update_config(self, config: dict[str, Any]) -> PromptConfigState:
         with self._lock:
@@ -251,11 +282,13 @@ def get_prompt_manager(
 
 
 def read_base_instructions() -> str:
-    return get_prompt_manager().get_base_instructions()
+    static_config = _resolve_static_prompt_config()
+    return _read_prompt_text(Path(static_config["base_prompt_path"]))
 
 
 def read_gpt5_codex_instructions(fallback: str) -> str:
-    content = get_prompt_manager().get_codex_instructions()
+    static_config = _resolve_static_prompt_config()
+    content = _read_prompt_text(Path(static_config["codex_prompt_path"]))
     return content if isinstance(content, str) and content.strip() else fallback
 
 

@@ -51,9 +51,11 @@ def resolve_request_reasoning_param(
     )
 
     standard_effort = payload.get("reasoning_effort")
-    if isinstance(standard_effort, str) and standard_effort.strip():
+    valid_efforts = allowed_efforts or DEFAULT_REASONING_EFFORTS
+    normalized_standard_effort = standard_effort.strip().lower() if isinstance(standard_effort, str) else ""
+    if normalized_standard_effort in valid_efforts:
         merged_overrides = dict(reasoning_overrides) if isinstance(reasoning_overrides, dict) else {}
-        merged_overrides["effort"] = standard_effort
+        merged_overrides["effort"] = normalized_standard_effort
         reasoning_overrides = merged_overrides
 
     return build_reasoning_param(

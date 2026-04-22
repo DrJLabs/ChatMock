@@ -115,10 +115,12 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(prompt_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token="test-token",
             )
             client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": "test-token"}
 
-            response = client.get("/admin/prompts")
+            response = client.get("/admin/prompts", headers=headers)
 
             self.assertEqual(response.status_code, 200)
             body = response.get_json()
@@ -134,8 +136,10 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(prompt_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token="test-token",
             )
             client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": "test-token"}
             mock_start.return_value = (
                 FakeUpstream(
                     [
@@ -154,7 +158,7 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(mock_start.call_args.kwargs["instructions"], "bare base v1")
 
             (prompt_dir / "prompt.md").write_text("bare base v2", encoding="utf-8")
-            reload_response = client.post("/admin/prompts/reload")
+            reload_response = client.post("/admin/prompts/reload", headers=headers)
             self.assertEqual(reload_response.status_code, 200)
 
             second = client.post(
@@ -173,8 +177,10 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(bare_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token="test-token",
             )
             client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": "test-token"}
             mock_start.return_value = (
                 FakeUpstream(
                     [
@@ -185,7 +191,7 @@ class RouteTests(unittest.TestCase):
                 None,
             )
 
-            update = client.post("/admin/prompts/config", json={"prompt_dir": str(clawmem_dir)})
+            update = client.post("/admin/prompts/config", json={"prompt_dir": str(clawmem_dir)}, headers=headers)
             self.assertEqual(update.status_code, 200)
 
             response = client.post(
@@ -208,6 +214,30 @@ class RouteTests(unittest.TestCase):
             response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "10.0.0.2"})
 
             self.assertEqual(response.status_code, 403)
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "reasoning_effort": "bogus",
+                "reasoning": {"effort": "high", "summary": "detailed"},
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "high")
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["summary"], "detailed")
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_accepts_standard_reasoning_effort(self, mock_start) -> None:

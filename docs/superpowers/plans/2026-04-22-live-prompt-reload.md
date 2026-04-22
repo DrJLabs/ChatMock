@@ -53,7 +53,7 @@ Expected: FAIL because no prompt admin routes or runtime prompt manager exist ye
 
 Add a manager that:
 - loads defaults from env or legacy prompt resolution
-- persists service-specific runtime config to `${CHATGPT_LOCAL_PROMPT_CONFIG}`
+- persists service-specific runtime config to `${CHATMOCK_PROMPT_CONFIG}` and `${CHATMOCK_CLAWMEM_PROMPT_CONFIG}` via the compose-mapped runtime env
 - caches prompt text in memory
 - exposes `get_state()`, `reload()`, and `update_config(...)`
 
@@ -127,24 +127,24 @@ Replace direct prompt file mounts with a stable root mount:
 and set per-service env defaults such as:
 
 ```yaml
-- CHATGPT_LOCAL_PROMPT_DIR=/app/prompts/bare
-- CHATGPT_LOCAL_PROMPT_CONFIG=/data/prompt-config-chatmock.json
+- CHATMOCK_PROMPT_DIR=/app/prompts/bare
+- CHATMOCK_PROMPT_CONFIG=/data/prompt-config-chatmock.json
 ```
 
 and for the ClawMem service:
 
 ```yaml
-- CHATGPT_LOCAL_PROMPT_DIR=/app/prompts/clawmem
-- CHATGPT_LOCAL_PROMPT_CONFIG=/data/prompt-config-clawmem.json
+- CHATMOCK_CLAWMEM_PROMPT_DIR=/app/prompts/clawmem
+- CHATMOCK_CLAWMEM_PROMPT_CONFIG=/data/prompt-config-clawmem.json
 ```
 
 - [ ] **Step 2: Document the new env vars**
 
 Add to `.env.example` and `DOCKER.md`:
-- `CHATGPT_LOCAL_PROMPT_DIR`
-- `CHATGPT_LOCAL_PROMPT_BASE_PATH`
-- `CHATGPT_LOCAL_PROMPT_CODEX_PATH`
-- `CHATGPT_LOCAL_PROMPT_CONFIG`
+- `CHATMOCK_PROMPT_DIR`
+- `CHATMOCK_PROMPT_CONFIG`
+- `CHATMOCK_CLAWMEM_PROMPT_DIR`
+- `CHATMOCK_CLAWMEM_PROMPT_CONFIG`
 - optional admin token env if implemented
 
 - [ ] **Step 3: Verify the docs/config slice**

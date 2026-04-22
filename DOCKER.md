@@ -31,10 +31,17 @@ Live prompt controls are local-only:
 - `POST /admin/prompts/reload`
 - `POST /admin/prompts/config`
 
+If `CHATMOCK_ADMIN_TOKEN` is configured, include the header:
+
+```bash
+-H "X-ChatMock-Admin-Token: $CHATMOCK_ADMIN_TOKEN"
+```
+
 Example: switch the main service to the ClawMem prompt directory without restarting the container:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/admin/prompts/config \
+  -H "X-ChatMock-Admin-Token: $CHATMOCK_ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"prompt_dir":"/app/prompts/clawmem"}' | jq .
 ```
@@ -42,7 +49,8 @@ curl -sS -X POST http://127.0.0.1:8000/admin/prompts/config \
 Example: reload prompt file contents after editing files in the mounted directory:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/admin/prompts/reload | jq .
+curl -sS -X POST http://127.0.0.1:8000/admin/prompts/reload \
+  -H "X-ChatMock-Admin-Token: $CHATMOCK_ADMIN_TOKEN" | jq .
 ```
 
 ## Isolated test stack
