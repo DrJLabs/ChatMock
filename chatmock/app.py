@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 
 from flask import Flask, jsonify, request
@@ -74,8 +75,11 @@ def create_app(
             or request.headers.get("X-Admin-Token")
             or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         )
+        if allow_admin_external and not (is_local or is_allowed_bridge):
+            if not (isinstance(expected_token, str) and expected_token):
+                return jsonify({"error": {"message": "External admin access requires CHATMOCK_ADMIN_TOKEN"}}), 403
         if isinstance(expected_token, str) and expected_token:
-            if provided_token != expected_token:
+            if not isinstance(provided_token, str) or not hmac.compare_digest(provided_token, expected_token):
                 return jsonify({"error": {"message": "Invalid admin token"}}), 403
         return None
 

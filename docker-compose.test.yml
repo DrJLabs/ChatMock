@@ -28,4 +28,4 @@ services:
 volumes:
   chatmock_live_auth:
     external: true
-    name: chatmock_chatmock_data
+    name: ${CHATMOCK_TEST_AUTH_VOLUME:-chatmock_chatmock_data}

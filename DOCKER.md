@@ -48,7 +48,7 @@ If your Docker/network setup uses a different host address, set:
 CHATMOCK_ALLOW_ADMIN_EXTERNAL=true
 ```
 
-and rely on `CHATMOCK_ADMIN_TOKEN` for access control.
+and rely on `CHATMOCK_ADMIN_TOKEN` for access control. External admin access is rejected unless a non-empty `CHATMOCK_ADMIN_TOKEN` is configured.
 
 Example: switch the main service to the ClawMem prompt directory without restarting the container:
 
@@ -98,6 +98,12 @@ The override isolates:
 
 The override also mounts the live stack's auth volume read-only at `/live-auth` and sets `CODEX_HOME=/live-auth`, so the test services can reuse existing auth without sharing the live stack's writable runtime state.
 
+If your live stack uses a different Compose project name, set the external auth volume explicitly:
+
+```bash
+CHATMOCK_TEST_AUTH_VOLUME=<your_live_project>_chatmock_data
+```
+
 ## Configuration
 Set options in `.env` or pass environment variables:
 - `PORT`: Container listening port (default 8000)
@@ -118,6 +124,7 @@ Set options in `.env` or pass environment variables:
 - `CHATMOCK_TEST_PORT`: main service port for the isolated test stack
 - `CHATMOCK_TEST_CLAWMEM_PORT`: ClawMem service port for the isolated test stack
 - `CHATMOCK_TEST_LOGIN_PORT`: login callback port for the isolated test stack
+- `CHATMOCK_TEST_AUTH_VOLUME`: external live auth volume name mounted read-only into the isolated test stack
 - `CHATMOCK_TEST_PROMPT_DIR`: main service prompt dir in the isolated test stack
 - `CHATMOCK_TEST_PROMPT_CONFIG`: main service runtime prompt config in the isolated test stack
 - `CHATMOCK_TEST_CLAWMEM_PROMPT_DIR`: ClawMem prompt dir in the isolated test stack

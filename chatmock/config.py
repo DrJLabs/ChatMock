@@ -153,8 +153,6 @@ class PromptManager:
             raise FileNotFoundError(f"Base prompt file not found: {base_path}")
         if not codex_path.exists():
             raise FileNotFoundError(f"Codex prompt file not found: {codex_path}")
-        _read_prompt_text(base_path)
-        _read_prompt_text(codex_path)
 
         return {
             "prompt_dir": normalized_dir,
