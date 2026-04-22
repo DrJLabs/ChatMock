@@ -10,6 +10,7 @@ from datetime import datetime
 
 from .app import create_app
 from .config import CLIENT_ID_DEFAULT
+from .instance_service import build_instance_service
 from .limits import RateLimitWindow, compute_reset_at, load_rate_limit_snapshot
 from .oauth import OAuthHTTPServer, OAuthHandler, REQUIRED_PORT, URL_BASE
 from .utils import eprint, get_home_dir, load_chatgpt_tokens, parse_jwt_claims, read_auth_file
@@ -290,7 +291,39 @@ def cmd_serve(
     return 0
 
 
-def main() -> None:
+def cmd_instances_list() -> int:
+    service = build_instance_service()
+    for item in service.list_instances():
+        print(
+            f'{item["id"]:<19} {item["bind_host"]}:{item["port"]}  '
+            f'profile={item["profile_id"]:<8} state_group={item["state_group"]}'
+        )
+    return 0
+
+
+def cmd_instances_validate() -> int:
+    service = build_instance_service()
+    summary = service.validate_registries()
+    prefix = "OK" if summary["ok"] else "ERROR"
+    print(
+        f'{prefix}: profiles={len(summary["profiles"])} '
+        f'instances={len(summary["instances"])} errors={len(summary["errors"])}'
+    )
+    return 0 if summary["ok"] else 1
+
+
+def cmd_instances_preview(instance_id: str) -> int:
+    service = build_instance_service()
+    try:
+        preview = service.render_instance_preview(instance_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(preview, indent=2))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="ChatMock: login & OpenAI-compatible proxy")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -371,32 +404,37 @@ def main() -> None:
     p_info = sub.add_parser("info", help="Print current stored tokens and derived account id")
     p_info.add_argument("--json", action="store_true", help="Output raw auth.json contents")
 
-    args = parser.parse_args()
+    p_instances = sub.add_parser("instances", help="Inspect managed ChatMock instances")
+    instances_sub = p_instances.add_subparsers(dest="instances_command", required=True)
+    instances_sub.add_parser("list", help="List managed instances")
+    instances_sub.add_parser("validate", help="Validate managed profiles and instances")
+    p_instances_preview = instances_sub.add_parser("preview", help="Render preview for one managed instance")
+    p_instances_preview.add_argument("instance_id")
+
+    args = parser.parse_args(argv)
 
     if args.command == "login":
-        sys.exit(cmd_login(no_browser=args.no_browser, verbose=args.verbose))
+        return cmd_login(no_browser=args.no_browser, verbose=args.verbose)
     elif args.command == "serve":
-        sys.exit(
-            cmd_serve(
-                host=args.host,
-                port=args.port,
-                verbose=args.verbose,
-                verbose_obfuscation=args.verbose_obfuscation,
-                reasoning_effort=args.reasoning_effort,
-                reasoning_summary=args.reasoning_summary,
-                reasoning_compat=args.reasoning_compat,
-                fast_mode=args.fast_mode,
-                debug_model=args.debug_model,
-                expose_reasoning_models=args.expose_reasoning_models,
-                default_web_search=args.enable_web_search,
-                inject_default_instructions=args.inject_default_instructions,
-            )
+        return cmd_serve(
+            host=args.host,
+            port=args.port,
+            verbose=args.verbose,
+            verbose_obfuscation=args.verbose_obfuscation,
+            reasoning_effort=args.reasoning_effort,
+            reasoning_summary=args.reasoning_summary,
+            reasoning_compat=args.reasoning_compat,
+            fast_mode=args.fast_mode,
+            debug_model=args.debug_model,
+            expose_reasoning_models=args.expose_reasoning_models,
+            default_web_search=args.enable_web_search,
+            inject_default_instructions=args.inject_default_instructions,
         )
     elif args.command == "info":
         auth = read_auth_file()
         if getattr(args, "json", False):
             print(json.dumps(auth or {}, indent=2))
-            sys.exit(0)
+            return 0
         access_token, account_id, id_token = load_chatgpt_tokens()
         if not access_token or not id_token:
             print("👤 Account")
@@ -404,7 +442,7 @@ def main() -> None:
             print("  • Run: python3 chatmock.py login")
             print("")
             _print_usage_limits_block()
-            sys.exit(0)
+            return 0
 
         id_claims = parse_jwt_claims(id_token) or {}
         access_claims = parse_jwt_claims(access_token) or {}
@@ -428,10 +466,19 @@ def main() -> None:
             print(f"  • Account ID: {account_id}")
         print("")
         _print_usage_limits_block()
-        sys.exit(0)
+        return 0
+    elif args.command == "instances":
+        if args.instances_command == "list":
+            return cmd_instances_list()
+        if args.instances_command == "validate":
+            return cmd_instances_validate()
+        if args.instances_command == "preview":
+            return cmd_instances_preview(args.instance_id)
+        parser.error("Unknown instances command")
     else:
         parser.error("Unknown command")
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -20,6 +20,14 @@
 
 The compose stack now mounts the whole `./prompts` tree into `/app/prompts` and each service keeps its own runtime prompt config file under `/data`.
 
+Registry-backed management metadata now also lives in:
+
+- `config/profiles/*.yaml`
+- `config/instances/*.yaml`
+
+Those registry files are used for validation, instance listing, and runtime previews.
+They do not replace the live prompt manager or the live `docker-compose.yml` entrypoint in this phase.
+
 Default runtime prompt selection:
 
 - `chatmock` uses `${CHATMOCK_PROMPT_DIR:-/app/prompts/bare}`
@@ -71,6 +79,24 @@ Example: reload prompt file contents after editing files in the mounted director
 curl -sS -X POST http://127.0.0.1:8000/admin/prompts/reload \
   -H "X-ChatMock-Admin-Token: $CHATMOCK_ADMIN_TOKEN" | jq .
 ```
+
+## Instance registry inspection
+
+Registry-backed read/preview controls are also exposed locally:
+
+- `GET /admin/profiles`
+- `GET /admin/instances`
+- `GET /admin/instances/<instance_id>/preview`
+
+CLI equivalents:
+
+```bash
+chatmock instances list
+chatmock instances validate
+chatmock instances preview chatmock
+```
+
+These controls are intended to give the current GUI or a future replacement UI a stable backend contract before any lifecycle/provisioning work is added.
 
 ## Isolated test stack
 

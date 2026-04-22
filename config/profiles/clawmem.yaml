@@ -1,0 +1,11 @@
+id: clawmem
+label: ClawMem
+description: ClawMem-specific prompt set for the secondary managed service
+prompt_dir: prompts/clawmem
+base_prompt_file: prompt.md
+codex_prompt_file: prompt_gpt5_codex.md
+runtime_defaults:
+  inject_default_instructions: true
+ui:
+  order: 20
+  editable: true

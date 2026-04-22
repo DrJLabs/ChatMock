@@ -1,0 +1,19 @@
+id: chatmock-clawmem
+label: ChatMock ClawMem
+profile_id: clawmem
+bind_host: 127.0.0.1
+port: 8001
+runtime: docker_compose
+prompt_config_path: /data/prompt-config-chatmock-clawmem.json
+state_group: shared-auth-default
+compose_service_name: chatmock-clawmem
+container_name: chatmock-clawmem
+env_overrides: {}
+healthcheck:
+  path: /health
+ui:
+  order: 20
+  mutable_fields:
+    - profile_id
+    - port
+enabled: true

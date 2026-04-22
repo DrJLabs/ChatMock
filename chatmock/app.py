@@ -10,6 +10,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from .config import get_prompt_manager
 from .http import build_cors_headers
+from .instance_service import build_instance_service
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
 from .websocket_routes import register_websocket_routes
@@ -36,6 +37,7 @@ def create_app(
         prompt_config_path=prompt_config_path,
         reset=True,
     )
+    instance_service = build_instance_service()
 
     app.config.update(
         VERBOSE=bool(verbose),
@@ -49,6 +51,7 @@ def create_app(
         DEFAULT_WEB_SEARCH=bool(default_web_search),
         INJECT_DEFAULT_INSTRUCTIONS=bool(inject_default_instructions),
         PROMPT_MANAGER=prompt_manager,
+        INSTANCE_SERVICE=instance_service,
         ADMIN_TOKEN=(
             admin_token
             if isinstance(admin_token, str) and admin_token
@@ -141,6 +144,31 @@ def create_app(
         except (FileNotFoundError, ValueError, OSError, PermissionError) as exc:
             return jsonify({"error": {"message": str(exc)}}), 400
         return jsonify(prompt_manager.as_dict())
+
+    @app.get("/admin/profiles")
+    def admin_profiles():
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        return jsonify({"profiles": instance_service.list_profiles()})
+
+    @app.get("/admin/instances")
+    def admin_instances():
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        return jsonify({"instances": instance_service.list_instances()})
+
+    @app.get("/admin/instances/<instance_id>/preview")
+    def admin_instance_preview(instance_id: str):
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        try:
+            preview = instance_service.render_instance_preview(instance_id)
+        except ValueError as exc:
+            return jsonify({"error": {"message": str(exc)}}), 404
+        return jsonify(preview)
 
     @app.after_request
     def _cors(resp):

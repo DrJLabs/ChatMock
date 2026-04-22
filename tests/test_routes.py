@@ -268,6 +268,49 @@ class RouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 403)
 
+    def test_admin_profiles_returns_profile_list(self) -> None:
+        app = create_app(admin_token=ADMIN_TOKEN)
+        client = app.test_client()
+
+        response = client.get("/admin/profiles", headers={"X-ChatMock-Admin-Token": ADMIN_TOKEN})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.get_json()["profiles"]], ["bare", "clawmem"])
+
+    def test_admin_instances_returns_instance_list(self) -> None:
+        app = create_app(admin_token=ADMIN_TOKEN)
+        client = app.test_client()
+
+        response = client.get("/admin/instances", headers={"X-ChatMock-Admin-Token": ADMIN_TOKEN})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.get_json()["instances"]], ["chatmock", "chatmock-clawmem"])
+
+    def test_admin_instance_preview_returns_chatmock_preview(self) -> None:
+        app = create_app(admin_token=ADMIN_TOKEN)
+        client = app.test_client()
+
+        response = client.get("/admin/instances/chatmock/preview", headers={"X-ChatMock-Admin-Token": ADMIN_TOKEN})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["instance"]["id"], "chatmock")
+        self.assertEqual(response.get_json()["profile"]["id"], "bare")
+
+    def test_admin_instance_preview_returns_404_for_unknown_instance(self) -> None:
+        app = create_app(admin_token=ADMIN_TOKEN)
+        client = app.test_client()
+
+        response = client.get(
+            "/admin/instances/does-not-exist/preview",
+            headers={"X-ChatMock-Admin-Token": ADMIN_TOKEN},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.get_json(),
+            {"error": {"message": "Unknown instance id: does-not-exist"}},
+        )
+
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
         mock_start.return_value = (
