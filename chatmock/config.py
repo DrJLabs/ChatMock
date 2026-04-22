@@ -26,7 +26,7 @@ def prompt_state_home() -> Path:
 
 
 def default_prompt_config_path() -> Path:
-    override = os.getenv("CHATGPT_LOCAL_PROMPT_CONFIG")
+    override = os.getenv("CHATMOCK_PROMPT_CONFIG") or os.getenv("CHATGPT_LOCAL_PROMPT_CONFIG")
     if isinstance(override, str) and override.strip():
         return Path(override.strip())
     return prompt_state_home() / "prompt-config.json"
@@ -49,9 +49,9 @@ def _read_prompt_text(path: Path) -> str:
 
 
 def _resolve_static_prompt_config() -> dict[str, str | None]:
-    explicit_prompt_dir = os.getenv("CHATGPT_LOCAL_PROMPT_DIR")
-    explicit_base = os.getenv("CHATGPT_LOCAL_PROMPT_BASE_PATH")
-    explicit_codex = os.getenv("CHATGPT_LOCAL_PROMPT_CODEX_PATH")
+    explicit_prompt_dir = os.getenv("CHATMOCK_PROMPT_DIR") or os.getenv("CHATGPT_LOCAL_PROMPT_DIR")
+    explicit_base = os.getenv("CHATMOCK_PROMPT_BASE_PATH") or os.getenv("CHATGPT_LOCAL_PROMPT_BASE_PATH")
+    explicit_codex = os.getenv("CHATMOCK_PROMPT_CODEX_PATH") or os.getenv("CHATGPT_LOCAL_PROMPT_CODEX_PATH")
     if isinstance(explicit_prompt_dir, str) and explicit_prompt_dir.strip():
         prompt_dir = Path(explicit_prompt_dir.strip()).expanduser()
         base_path = prompt_dir / "prompt.md"

@@ -18,6 +18,8 @@ from chatmock.responses_api import (
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
 
+ADMIN_TOKEN = "test-token"
+
 
 class FakeUpstream:
     def __init__(
@@ -115,10 +117,10 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(prompt_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
-                admin_token="test-token",
+                admin_token=ADMIN_TOKEN,
             )
             client = app.test_client()
-            headers = {"X-ChatMock-Admin-Token": "test-token"}
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
 
             response = client.get("/admin/prompts", headers=headers)
 
@@ -136,10 +138,10 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(prompt_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
-                admin_token="test-token",
+                admin_token=ADMIN_TOKEN,
             )
             client = app.test_client()
-            headers = {"X-ChatMock-Admin-Token": "test-token"}
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
             mock_start.return_value = (
                 FakeUpstream(
                     [
@@ -177,10 +179,10 @@ class RouteTests(unittest.TestCase):
             app = create_app(
                 prompt_dir=str(bare_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
-                admin_token="test-token",
+                admin_token=ADMIN_TOKEN,
             )
             client = app.test_client()
-            headers = {"X-ChatMock-Admin-Token": "test-token"}
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
             mock_start.return_value = (
                 FakeUpstream(
                     [
@@ -229,7 +231,14 @@ class RouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 403)
 
-    @patch.dict("os.environ", {"CHATMOCK_ADMIN_TRUSTED_IPS": "10.0.0.0/8"})
+    @patch.dict(
+        "os.environ",
+        {
+            "CHATMOCK_ADMIN_TRUSTED_IPS": "10.0.0.0/8",
+            "CHATMOCK_ADMIN_TOKEN": "",
+            "CHATGPT_LOCAL_ADMIN_TOKEN": "",
+        },
+    )
     def test_admin_prompts_allows_configured_trusted_ip_range(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

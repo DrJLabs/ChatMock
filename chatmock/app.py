@@ -6,7 +6,7 @@ import os
 
 from flask import Flask, jsonify, request
 from flask_sock import Sock
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from .config import get_prompt_manager
 from .http import build_cors_headers
@@ -132,7 +132,7 @@ def create_app(
             return denied
         try:
             payload = request.get_json(silent=False)
-        except BadRequest:
+        except (BadRequest, UnsupportedMediaType):
             return jsonify({"error": {"message": "Invalid JSON body"}}), 400
         if not isinstance(payload, dict):
             return jsonify({"error": {"message": "Invalid JSON body"}}), 400
