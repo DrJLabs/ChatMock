@@ -474,6 +474,11 @@ class ResponsesToolCallStreamNormalizer:
 def iter_normalized_response_events(events: Iterable[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
     normalizer = ResponsesToolCallStreamNormalizer()
     for event in events:
+        if event.get("data") == "[DONE]" or event.get("type") == "[DONE]":
+            for normalized in normalizer.flush():
+                yield normalized
+            yield event
+            return
         for normalized in normalizer.process(event):
             yield normalized
     for normalized in normalizer.flush():
@@ -541,7 +546,7 @@ def stream_upstream_bytes(
                         payload = json.dumps(flushed, ensure_ascii=False)
                         yield f"data: {payload}\n\n".encode("utf-8")
                     yield frame.raw
-                    continue
+                    return
                 payload = json.dumps(normalized, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
         for normalized in normalizer.flush():

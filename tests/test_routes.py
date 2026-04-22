@@ -1244,6 +1244,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "response.output_item.added")
         self.assertEqual(events[0]["item"]["arguments"], tool_args)
         self.assertTrue(body.endswith("data: [DONE]\n\n"))
+        self.assertEqual(len(events), 1)
 
     def test_iter_sse_frames_handles_crlf_delimiter_split_across_chunks(self) -> None:
         class ChunkedUpstream(FakeUpstream):
@@ -1399,6 +1400,42 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[1]["item"]["arguments"], tool_args)
         self.assertEqual(events[2]["type"], "response.completed")
         self.assertEqual(events[2]["response"]["output"][0]["arguments"], tool_args)
+
+    def test_iter_normalized_response_events_flushes_before_done_and_stops(self) -> None:
+        tool_args = "{\"query\":\"done-stop\"}"
+        events = list(
+            iter_normalized_response_events(
+                [
+                    {
+                        "type": "response.output_item.added",
+                        "item": {
+                            "id": "fc_done_stop_1",
+                            "type": "function_call",
+                            "status": "in_progress",
+                            "arguments": "",
+                            "call_id": "call_done_stop_1",
+                            "name": "webSearch",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "delta": tool_args,
+                        "item_id": "fc_done_stop_1",
+                        "output_index": 0,
+                    },
+                    {"type": "[DONE]", "data": "[DONE]"},
+                    {
+                        "type": "response.output_text.delta",
+                        "delta": "should-not-be-emitted",
+                    },
+                ]
+            )
+        )
+
+        self.assertEqual(events[0]["type"], "response.output_item.added")
+        self.assertEqual(events[0]["item"]["arguments"], tool_args)
+        self.assertEqual(events[1]["type"], "[DONE]")
+        self.assertEqual(len(events), 2)
 
 
 if __name__ == "__main__":
