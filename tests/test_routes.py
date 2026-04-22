@@ -1252,6 +1252,30 @@ class RouteTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["response.created", "response.completed"])
         self.assertTrue(body.endswith("data: [DONE]\r\n\r\n") or body.endswith("data: [DONE]\n\n"))
 
+    def test_iter_sse_frames_handles_mixed_blank_line_delimiters(self) -> None:
+        class ChunkedUpstream(FakeUpstream):
+            def __init__(self, chunks: list[bytes]) -> None:
+                super().__init__(events=[])
+                self._chunks = chunks
+
+            def iter_content(self, chunk_size=None):
+                for chunk in self._chunks:
+                    yield chunk
+
+        upstream = ChunkedUpstream(
+            [
+                b'data: {"type":"response.created","response":{"id":"resp_mixed"}}\n\r\n',
+                b'data: {"type":"response.completed","response":{"id":"resp_mixed"}}\r\n\n',
+                b'data: [DONE]\n\n',
+            ]
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual([event["type"] for event in events], ["response.created", "response.completed"])
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
     def test_iter_normalized_response_events_normalizes_terminal_response_output_arguments(self) -> None:
         tool_args = "{\"query\":\"from-terminal-output\"}"
         events = list(

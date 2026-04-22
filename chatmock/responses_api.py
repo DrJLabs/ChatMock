@@ -232,7 +232,7 @@ def _parse_sse_frame(raw_frame: bytes) -> Dict[str, Any] | None:
 
 def _split_sse_frame(buffer: bytes) -> tuple[bytes, bytes] | None:
     matches: List[tuple[int, bytes]] = []
-    for delimiter in (b"\r\n\r\n", b"\n\n", b"\r\r"):
+    for delimiter in (b"\r\n\r\n", b"\n\r\n", b"\r\n\n", b"\n\n", b"\r\r"):
         idx = buffer.find(delimiter)
         if idx >= 0:
             matches.append((idx, delimiter))
@@ -311,7 +311,6 @@ def _best_tool_arguments(
             buffered = "".join(part for part in buffer_parts if isinstance(part, str) and part)
             if buffered:
                 candidates.append(buffered)
-        candidates.append(pending.get("argument_buffer"))
 
     for raw in candidates:
         if isinstance(raw, str) and raw and raw.strip() not in ("{}", "[]", "null"):
