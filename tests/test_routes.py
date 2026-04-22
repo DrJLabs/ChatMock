@@ -1013,6 +1013,85 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(item_done["item"]["arguments"], tool_args)
         self.assertEqual(completed["type"], "response.completed")
 
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_flushes_buffered_tool_call_before_unexpected_close(self, mock_connect, _mock_auth) -> None:
+        tool_args = "{\"path\":\"flush-before-close.md\",\"content\":\"hello\"}"
+
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_flush"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.added",
+                            "item": {
+                                "id": "fc_ws_flush_1",
+                                "type": "function_call",
+                                "status": "in_progress",
+                                "arguments": "",
+                                "call_id": "call_ws_flush_1",
+                                "name": "writeFile",
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "response.function_call_arguments.delta",
+                            "delta": tool_args,
+                            "item_id": "fc_ws_flush_1",
+                            "output_index": 0,
+                        }
+                    ),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                if self._messages:
+                    return self._messages.pop(0)
+                return None
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            created = json.loads(client.recv())
+            added = json.loads(client.recv())
+            error = json.loads(client.recv())
+
+        self.assertEqual(created["type"], "response.created")
+        self.assertEqual(added["type"], "response.output_item.added")
+        self.assertEqual(added["item"]["arguments"], tool_args)
+        self.assertEqual(error["type"], "error")
+        self.assertIn("closed unexpectedly", error["error"]["message"])
+
     def test_iter_normalized_response_events_buffers_web_search_preview_call(self) -> None:
         tool_args = "{\"query\":\"preview me\"}"
         events = list(
