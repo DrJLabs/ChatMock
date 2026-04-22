@@ -535,21 +535,14 @@ def stream_upstream_bytes(
                     yield frame.raw
                     continue
                 payload = json.dumps(normalized, ensure_ascii=False)
-                if isinstance(event_type, str) and event_type.strip():
-                    yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
-                else:
-                    yield f"data: {payload}\n\n".encode("utf-8")
+                yield f"data: {payload}\n\n".encode("utf-8")
         for normalized in normalizer.flush():
             if callable(on_event):
                 try:
                     on_event(normalized)
                 except Exception:
                     pass
-            event_type = normalized.get("type")
             payload = json.dumps(normalized, ensure_ascii=False)
-            if isinstance(event_type, str) and event_type.strip():
-                yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
-            else:
-                yield f"data: {payload}\n\n".encode("utf-8")
+            yield f"data: {payload}\n\n".encode("utf-8")
     finally:
         upstream.close()

@@ -1,15 +1,15 @@
 services:
   chatmock:
     image: ${CHATMOCK_IMAGE:-storagetime/chatmock:latest}
-    container_name: chatmock
+    container_name: ${CHATMOCK_CONTAINER_NAME:-chatmock}
     command: ["serve"]
     env_file: .env
     environment:
-      - CHATGPT_LOCAL_HOME=/data
+      - CHATGPT_LOCAL_HOME=${CHATGPT_LOCAL_HOME:-/data}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${CHATMOCK_BIND_HOST:-127.0.0.1}:${PORT:-8000}:8000"
     volumes:
-      - chatmock_data:/data
+      - chatmock_data:${CHATGPT_LOCAL_HOME:-/data}
       - ./prompt.md:/app/prompt.md:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\" "]
@@ -23,12 +23,12 @@ services:
     profiles: ["login"]
     command: ["login"]
     environment:
-      - CHATGPT_LOCAL_HOME=/data
-      - CHATGPT_LOCAL_LOGIN_BIND=0.0.0.0
+      - CHATGPT_LOCAL_HOME=${CHATGPT_LOCAL_HOME:-/data}
+      - CHATGPT_LOCAL_LOGIN_BIND=${CHATGPT_LOCAL_LOGIN_BIND:-0.0.0.0}
     volumes:
-      - chatmock_data:/data
+      - chatmock_data:${CHATGPT_LOCAL_HOME:-/data}
     ports:
-      - "127.0.0.1:1455:1455"
+      - "${CHATMOCK_BIND_HOST:-127.0.0.1}:${CHATMOCK_LOGIN_PORT:-1455}:1455"
 
 volumes:
   chatmock_data:

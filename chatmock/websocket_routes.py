@@ -92,7 +92,10 @@ def register_websocket_routes(sock: Sock) -> None:
         ) -> None:
             for normalized_event in stream_normalizer.flush():
                 normalized_message = json.dumps(normalized_event, ensure_ascii=False)
-                ws.send(normalized_message)
+                try:
+                    ws.send(normalized_message)
+                except Exception:
+                    return
                 if session_id:
                     note_responses_stream_event(session_id, normalized_event)
 
