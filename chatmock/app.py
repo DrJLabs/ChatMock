@@ -10,6 +10,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from .config import get_prompt_manager
 from .http import build_cors_headers
+from .instance_service import build_instance_service
 from .routes_openai import openai_bp
 from .routes_ollama import ollama_bp
 from .websocket_routes import register_websocket_routes
@@ -49,6 +50,7 @@ def create_app(
         DEFAULT_WEB_SEARCH=bool(default_web_search),
         INJECT_DEFAULT_INSTRUCTIONS=bool(inject_default_instructions),
         PROMPT_MANAGER=prompt_manager,
+        INSTANCE_SERVICE=None,
         ADMIN_TOKEN=(
             admin_token
             if isinstance(admin_token, str) and admin_token
@@ -107,6 +109,16 @@ def create_app(
                 return jsonify({"error": {"message": "Invalid admin token"}}), 403
         return None
 
+    def _get_instance_service():
+        service = app.config.get("INSTANCE_SERVICE")
+        if service is None:
+            service = build_instance_service()
+            app.config["INSTANCE_SERVICE"] = service
+        return service
+
+    def _registry_error(exc: Exception):
+        return jsonify({"error": {"message": str(exc)}}), 400
+
     @app.get("/admin/prompts")
     def admin_prompts_state():
         denied = _require_local_admin()
@@ -141,6 +153,43 @@ def create_app(
         except (FileNotFoundError, ValueError, OSError, PermissionError) as exc:
             return jsonify({"error": {"message": str(exc)}}), 400
         return jsonify(prompt_manager.as_dict())
+
+    @app.get("/admin/profiles")
+    def admin_profiles():
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        try:
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        return jsonify({"profiles": service.list_profiles()})
+
+    @app.get("/admin/instances")
+    def admin_instances():
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        try:
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        return jsonify({"instances": service.list_instances()})
+
+    @app.get("/admin/instances/<instance_id>/preview")
+    def admin_instance_preview(instance_id: str):
+        denied = _require_local_admin()
+        if denied is not None:
+            return denied
+        try:
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        try:
+            preview = service.render_instance_preview(instance_id)
+        except ValueError as exc:
+            return jsonify({"error": {"message": str(exc)}}), 404
+        return jsonify(preview)
 
     @app.after_request
     def _cors(resp):

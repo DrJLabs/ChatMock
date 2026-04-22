@@ -1,0 +1,11 @@
+id: bare
+label: Bare
+description: Default low-opinion prompt set for the main ChatMock service
+prompt_dir: chatmock/bundled_prompts/bare
+base_prompt_file: prompt.md
+codex_prompt_file: prompt_gpt5_codex.md
+runtime_defaults:
+  inject_default_instructions: true
+ui:
+  order: 10
+  editable: true

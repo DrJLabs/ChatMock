@@ -16,6 +16,7 @@ dependencies = [
     "itsdangerous==2.2.0",
     "jinja2==3.1.6",
     "markupsafe==3.0.2",
+    "PyYAML==6.0.2",
     "requests==2.32.5",
     "urllib3==2.5.0",
     "websockets==15.0.1",
@@ -36,7 +37,14 @@ chatmock = "chatmock.cli:main"
 include = ["chatmock*"]
 
 [tool.setuptools.package-data]
-chatmock = ["prompt.md", "prompt_gpt5_codex.md"]
+chatmock = [
+    "prompt.md",
+    "prompt_gpt5_codex.md",
+    "bundled_config/profiles/*.yaml",
+    "bundled_config/instances/*.yaml",
+    "bundled_prompts/bare/*.md",
+    "bundled_prompts/clawmem/*.md",
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "chatmock.version.__version__"}

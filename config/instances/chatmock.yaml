@@ -1,0 +1,20 @@
+id: chatmock
+label: ChatMock
+profile_id: bare
+bind_host: 127.0.0.1
+port: 8000
+runtime: docker_compose
+prompt_config_path: /data/prompt-config-chatmock.json
+state_group: shared-auth-default
+compose_service_name: chatmock
+container_name: chatmock
+env_prefix: CHATMOCK
+env_overrides: {}
+healthcheck:
+  path: /health
+ui:
+  order: 10
+  mutable_fields:
+    - profile_id
+    - port
+enabled: true
