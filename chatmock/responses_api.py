@@ -37,9 +37,18 @@ class NormalizedResponsesRequest:
 
 
 def instructions_for_model(config: Dict[str, Any], model: str) -> str:
-    base = config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
+    prompt_manager = config.get("PROMPT_MANAGER")
+    base = config.get("BASE_INSTRUCTIONS")
+    if (not isinstance(base, str) or not base.strip()) and hasattr(prompt_manager, "get_base_instructions"):
+        base = prompt_manager.get_base_instructions()
+    if not isinstance(base, str) or not base.strip():
+        base = BASE_INSTRUCTIONS
     if uses_codex_instructions(model):
-        codex = config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        codex = config.get("GPT5_CODEX_INSTRUCTIONS")
+        if (not isinstance(codex, str) or not codex.strip()) and hasattr(prompt_manager, "get_codex_instructions"):
+            codex = prompt_manager.get_codex_instructions()
+        if not isinstance(codex, str) or not codex.strip():
+            codex = GPT5_CODEX_INSTRUCTIONS
         if isinstance(codex, str) and codex.strip():
             return codex
     return base

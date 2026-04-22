@@ -1,0 +1,31 @@
+services:
+  chatmock:
+    container_name: ${CHATMOCK_TEST_CONTAINER_NAME:-chatmock-test}
+    environment:
+      - CODEX_HOME=/live-auth
+      - CHATGPT_LOCAL_PROMPT_DIR=${CHATMOCK_TEST_PROMPT_DIR:-/app/prompts/bare}
+      - CHATGPT_LOCAL_PROMPT_CONFIG=${CHATMOCK_TEST_PROMPT_CONFIG:-/data/prompt-config-chatmock-test.json}
+    ports: !override
+      - "${CHATMOCK_TEST_BIND_HOST:-127.0.0.1}:${CHATMOCK_TEST_PORT:-18000}:8000"
+    volumes:
+      - chatmock_live_auth:/live-auth:ro
+
+  chatmock-clawmem:
+    container_name: ${CHATMOCK_TEST_CLAWMEM_CONTAINER_NAME:-chatmock-clawmem-test}
+    environment:
+      - CODEX_HOME=/live-auth
+      - CHATGPT_LOCAL_PROMPT_DIR=${CHATMOCK_TEST_CLAWMEM_PROMPT_DIR:-/app/prompts/clawmem}
+      - CHATGPT_LOCAL_PROMPT_CONFIG=${CHATMOCK_TEST_CLAWMEM_PROMPT_CONFIG:-/data/prompt-config-chatmock-clawmem-test.json}
+    ports: !override
+      - "${CHATMOCK_TEST_CLAWMEM_BIND_HOST:-127.0.0.1}:${CHATMOCK_TEST_CLAWMEM_PORT:-18001}:8000"
+    volumes:
+      - chatmock_live_auth:/live-auth:ro
+
+  chatmock-login:
+    ports: !override
+      - "${CHATMOCK_TEST_BIND_HOST:-127.0.0.1}:${CHATMOCK_TEST_LOGIN_PORT:-11455}:1455"
+
+volumes:
+  chatmock_live_auth:
+    external: true
+    name: ${CHATMOCK_TEST_AUTH_VOLUME:-chatmock_chatmock_data}

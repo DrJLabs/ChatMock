@@ -4,7 +4,9 @@ import json
 import socket
 import threading
 import time
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from chatmock.app import create_app
@@ -15,6 +17,8 @@ from chatmock.responses_api import (
 )
 from chatmock.session import reset_session_state
 from websockets.sync.client import connect as ws_connect
+
+ADMIN_TOKEN = "test-token"
 
 
 class FakeUpstream:
@@ -98,6 +102,292 @@ class RouteTests(unittest.TestCase):
         model_names = [item["name"] for item in body["models"]]
         self.assertIn("gpt-5.4", model_names)
         self.assertIn("gpt-5.4-mini", model_names)
+
+    def _write_prompt_set(self, root: Path, profile: str, base_text: str, codex_text: str) -> Path:
+        prompt_dir = root / profile
+        prompt_dir.mkdir(parents=True, exist_ok=True)
+        (prompt_dir / "prompt.md").write_text(base_text, encoding="utf-8")
+        (prompt_dir / "prompt_gpt5_codex.md").write_text(codex_text, encoding="utf-8")
+        return prompt_dir
+
+    def test_admin_prompts_returns_current_prompt_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token=ADMIN_TOKEN,
+            )
+            client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
+
+            response = client.get("/admin/prompts", headers=headers)
+
+            self.assertEqual(response.status_code, 200)
+            body = response.get_json()
+            self.assertEqual(body["prompt_dir"], str(prompt_dir))
+            self.assertEqual(body["base_prompt_path"], str(prompt_dir / "prompt.md"))
+            self.assertEqual(body["codex_prompt_path"], str(prompt_dir / "prompt_gpt5_codex.md"))
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_admin_prompts_reload_refreshes_cached_prompt_contents(self, mock_start) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base v1", "bare codex v1")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token=ADMIN_TOKEN,
+            )
+            client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
+            mock_start.return_value = (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-openai"}},
+                    ]
+                ),
+                None,
+            )
+
+            first = client.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+            )
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(mock_start.call_args.kwargs["instructions"], "bare base v1")
+
+            (prompt_dir / "prompt.md").write_text("bare base v2", encoding="utf-8")
+            reload_response = client.post("/admin/prompts/reload", headers=headers)
+            self.assertEqual(reload_response.status_code, 200)
+
+            second = client.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+            )
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(mock_start.call_args.kwargs["instructions"], "bare base v2")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_admin_prompts_config_switches_prompt_directory_live(self, mock_start) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bare_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            clawmem_dir = self._write_prompt_set(root, "clawmem", "clawmem base", "clawmem codex")
+            app = create_app(
+                prompt_dir=str(bare_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                admin_token=ADMIN_TOKEN,
+            )
+            client = app.test_client()
+            headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}
+            mock_start.return_value = (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-openai"}},
+                    ]
+                ),
+                None,
+            )
+
+            update = client.post("/admin/prompts/config", json={"prompt_dir": str(clawmem_dir)}, headers=headers)
+            self.assertEqual(update.status_code, 200)
+
+            response = client.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-5.3-codex", "messages": [{"role": "user", "content": "hi"}]},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(mock_start.call_args.kwargs["instructions"], "clawmem codex")
+
+    def test_admin_prompts_rejects_non_loopback_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "10.0.0.2"})
+
+            self.assertEqual(response.status_code, 403)
+
+    def test_admin_prompts_rejects_missing_remote_addr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": None})
+
+            self.assertEqual(response.status_code, 403)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "CHATMOCK_ADMIN_TRUSTED_IPS": "10.0.0.0/8",
+            "CHATMOCK_ADMIN_TOKEN": "",
+            "CHATGPT_LOCAL_ADMIN_TOKEN": "",
+        },
+    )
+    def test_admin_prompts_allows_configured_trusted_ip_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "10.12.0.5"})
+
+            self.assertEqual(response.status_code, 200)
+
+    @patch.dict("os.environ", {"CHATMOCK_ALLOW_ADMIN_EXTERNAL": "true"})
+    def test_admin_prompts_external_access_requires_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
+
+            self.assertEqual(response.status_code, 403)
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "reasoning_effort": "bogus",
+                "reasoning": {"effort": "high", "summary": "detailed"},
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "high")
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["summary"], "detailed")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_codex_prompt_falls_back_to_base_when_variant_missing(self, mock_start) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = root / "bare"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            (prompt_dir / "prompt.md").write_text("base only", encoding="utf-8")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+            mock_start.return_value = (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-openai"}},
+                    ]
+                ),
+                None,
+            )
+
+            response = client.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-5.3-codex", "messages": [{"role": "user", "content": "hi"}]},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(mock_start.call_args.kwargs["instructions"], "base only")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_accepts_standard_reasoning_effort(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "reasoning_effort": "low",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "low")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_standard_reasoning_effort_overrides_nested_reasoning(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.4",
+                "reasoning_effort": "low",
+                "reasoning": {"effort": "high", "summary": "detailed"},
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "low")
+        self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["summary"], "detailed")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_reasoning_defaults_unchanged_without_explicit_reasoning_fields(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.completed", "response": {"id": "resp-openai"}},
+                ]
+            ),
+            None,
+        )
+        response = self.client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            mock_start.call_args.kwargs["reasoning_param"],
+            {"effort": "medium", "summary": "auto"},
+        )
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions(self, mock_start) -> None:
