@@ -215,6 +215,20 @@ class RouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 403)
 
+    def test_admin_prompts_rejects_missing_remote_addr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": None})
+
+            self.assertEqual(response.status_code, 403)
+
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
         mock_start.return_value = (
@@ -238,6 +252,36 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["effort"], "high")
         self.assertEqual(mock_start.call_args.kwargs["reasoning_param"]["summary"], "detailed")
+
+    @patch("chatmock.routes_openai.start_upstream_request")
+    def test_chat_completions_codex_prompt_falls_back_to_base_when_variant_missing(self, mock_start) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = root / "bare"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            (prompt_dir / "prompt.md").write_text("base only", encoding="utf-8")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+            mock_start.return_value = (
+                FakeUpstream(
+                    [
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {"type": "response.completed", "response": {"id": "resp-openai"}},
+                    ]
+                ),
+                None,
+            )
+
+            response = client.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-5.3-codex", "messages": [{"role": "user", "content": "hi"}]},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(mock_start.call_args.kwargs["instructions"], "base only")
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_accepts_standard_reasoning_effort(self, mock_start) -> None:

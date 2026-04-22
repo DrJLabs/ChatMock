@@ -139,7 +139,8 @@ class PromptManager:
 
         if normalized_dir:
             normalized_base = normalized_base or str(Path(normalized_dir) / "prompt.md")
-            normalized_codex = normalized_codex or str(Path(normalized_dir) / "prompt_gpt5_codex.md")
+            codex_path = Path(normalized_dir) / "prompt_gpt5_codex.md"
+            normalized_codex = normalized_codex or (str(codex_path) if codex_path.exists() else None)
 
         if not normalized_base:
             raise ValueError("Prompt config requires prompt_dir or base_prompt_path")

@@ -34,7 +34,6 @@ def create_app(
         prompt_config_path=prompt_config_path,
         reset=True,
     )
-    prompt_manager.persist_defaults()
 
     app.config.update(
         VERBOSE=bool(verbose),
@@ -62,24 +61,26 @@ def create_app(
 
     def _require_local_admin():
         remote_addr = request.remote_addr
-        expected_token = app.config.get("ADMIN_TOKEN")
-        provided_token = (
-            request.headers.get("X-ChatMock-Admin-Token")
-            or request.headers.get("X-Admin-Token")
-            or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        )
-        if isinstance(expected_token, str) and expected_token and provided_token == expected_token:
-            return None
+        allow_admin_external = os.getenv("CHATMOCK_ALLOW_ADMIN_EXTERNAL", "false").lower() == "true"
+        allowed_local_addresses = {"127.0.0.1", "::1"}
         allowed_bridge_prefixes = ("172.17.", "172.18.", "172.19.", "172.20.")
         allowed_bridge_addresses = {"172.17.0.1", "172.18.0.1"}
         is_allowed_bridge = isinstance(remote_addr, str) and (
             remote_addr in allowed_bridge_addresses
             or remote_addr.startswith(allowed_bridge_prefixes)
         )
-        if remote_addr not in (None, "127.0.0.1", "::1") and not is_allowed_bridge:
+        is_local = isinstance(remote_addr, str) and remote_addr in allowed_local_addresses
+        if not (is_local or is_allowed_bridge or allow_admin_external):
             return jsonify({"error": {"message": "Admin routes are local-only"}}), 403
+        expected_token = app.config.get("ADMIN_TOKEN")
+        provided_token = (
+            request.headers.get("X-ChatMock-Admin-Token")
+            or request.headers.get("X-Admin-Token")
+            or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        )
         if isinstance(expected_token, str) and expected_token:
-            return jsonify({"error": {"message": "Invalid admin token"}}), 403
+            if provided_token != expected_token:
+                return jsonify({"error": {"message": "Invalid admin token"}}), 403
         return None
 
     @app.get("/admin/prompts")
