@@ -166,6 +166,21 @@ class InstanceServiceTests(unittest.TestCase):
                 },
             )
 
+    def test_validate_registries_reports_runtime_registry_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_registry(root)
+            service = build_instance_service(repo_root=root)
+            (root / "config" / "instances" / "chatmock.yaml").write_text(
+                CHATMOCK_INSTANCE_YAML.replace("port: 8000", "port: true"),
+                encoding="utf-8",
+            )
+
+            summary = service.validate_registries()
+
+            self.assertFalse(summary["ok"])
+            self.assertIn("Invalid port: True", summary["errors"])
+
     def test_render_instance_preview_returns_expected_runtime_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -194,3 +209,14 @@ class InstanceServiceTests(unittest.TestCase):
                 preview["state_groups"],
                 {"shared-auth-default": ["chatmock", "chatmock-clawmem"]},
             )
+
+    def test_list_profiles_returns_deep_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_registry(root)
+            service = build_instance_service(repo_root=root)
+
+            profiles = service.list_profiles()
+            profiles[0]["ui"]["order"] = 999
+
+            self.assertEqual(service.get_profile("bare")["ui"]["order"], 10)

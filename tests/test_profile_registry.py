@@ -69,3 +69,15 @@ class ProfileRegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Duplicate profile id: bare"):
                 load_profiles(config_root, repo_root=root)
+
+    def test_profile_ui_order_rejects_bool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_prompt_set(root, "bare")
+            config_root = root / "config" / "profiles"
+            config_root.mkdir(parents=True, exist_ok=True)
+            bad_yaml = BARE_PROFILE_YAML.replace("order: 10", "order: true")
+            (config_root / "bare.yaml").write_text(bad_yaml, encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "Profile ui.order must be an integer"):
+                load_profiles(config_root, repo_root=root)

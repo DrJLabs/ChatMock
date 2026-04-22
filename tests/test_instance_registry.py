@@ -92,3 +92,14 @@ class InstanceRegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Duplicate bind target: 127.0.0.1:8000"):
                 load_instances(instances_root, known_profile_ids={"bare", "clawmem"})
+
+    def test_instance_port_rejects_bool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instances_root = root / "config" / "instances"
+            instances_root.mkdir(parents=True, exist_ok=True)
+            bad_yaml = CHATMOCK_INSTANCE_YAML.replace("port: 8000", "port: true")
+            (instances_root / "chatmock.yaml").write_text(bad_yaml, encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "Invalid port: True"):
+                load_instances(instances_root, known_profile_ids={"bare"})

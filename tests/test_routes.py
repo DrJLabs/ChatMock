@@ -311,6 +311,19 @@ class RouteTests(unittest.TestCase):
             {"error": {"message": "Unknown instance id: does-not-exist"}},
         )
 
+    @patch("chatmock.app.build_instance_service", side_effect=ValueError("registry broken"))
+    def test_registry_build_failure_does_not_break_health_or_proxy_startup(self, _mock_build) -> None:
+        app = create_app(admin_token=ADMIN_TOKEN)
+        client = app.test_client()
+
+        health = client.get("/health")
+        admin = client.get("/admin/profiles", headers={"X-ChatMock-Admin-Token": ADMIN_TOKEN})
+
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.get_json(), {"status": "ok"})
+        self.assertEqual(admin.status_code, 400)
+        self.assertEqual(admin.get_json(), {"error": {"message": "registry broken"}})
+
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
         mock_start.return_value = (

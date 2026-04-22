@@ -37,7 +37,14 @@ chatmock = "chatmock.cli:main"
 include = ["chatmock*"]
 
 [tool.setuptools.package-data]
-chatmock = ["prompt.md", "prompt_gpt5_codex.md"]
+chatmock = [
+    "prompt.md",
+    "prompt_gpt5_codex.md",
+    "bundled_config/profiles/*.yaml",
+    "bundled_config/instances/*.yaml",
+    "bundled_prompts/bare/*.md",
+    "bundled_prompts/clawmem/*.md",
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "chatmock.version.__version__"}

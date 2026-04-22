@@ -62,7 +62,7 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
         raise ValueError(f"Invalid bind_host: {bind_host}") from exc
 
     port = data.get("port")
-    if not isinstance(port, int) or not (1 <= port <= 65535):
+    if type(port) is not int or not (1 <= port <= 65535):
         raise ValueError(f"Invalid port: {port}")
 
     runtime = _require_string(data, "runtime")
@@ -89,7 +89,7 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
     ui = data.get("ui")
     if not isinstance(ui, dict):
         raise ValueError("Instance field ui must be a mapping")
-    if not isinstance(ui.get("order"), int):
+    if type(ui.get("order")) is not int:
         raise ValueError("Instance ui.order must be an integer")
     mutable_fields = ui.get("mutable_fields")
     if not isinstance(mutable_fields, list) or not all(
@@ -100,6 +100,9 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
     enabled = data.get("enabled")
     if not isinstance(enabled, bool):
         raise ValueError("Instance field enabled must be a boolean")
+    env_prefix = data.get("env_prefix")
+    if env_prefix is not None and (not isinstance(env_prefix, str) or not env_prefix.strip()):
+        raise ValueError("Instance field env_prefix must be a non-empty string when provided")
 
     return {
         "id": instance_id,
@@ -113,6 +116,7 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
         "compose_service_name": _require_string(data, "compose_service_name"),
         "container_name": _require_string(data, "container_name"),
         "env_overrides": dict(env_overrides),
+        "env_prefix": env_prefix.strip() if isinstance(env_prefix, str) else None,
         "healthcheck": {"path": healthcheck_path},
         "ui": {"order": ui["order"], "mutable_fields": list(mutable_fields)},
         "enabled": enabled,

@@ -292,7 +292,11 @@ def cmd_serve(
 
 
 def cmd_instances_list() -> int:
-    service = build_instance_service()
+    try:
+        service = build_instance_service()
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(str(exc))
+        return 1
     for item in service.list_instances():
         print(
             f'{item["id"]:<19} {item["bind_host"]}:{item["port"]}  '
@@ -302,7 +306,11 @@ def cmd_instances_list() -> int:
 
 
 def cmd_instances_validate() -> int:
-    service = build_instance_service()
+    try:
+        service = build_instance_service()
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(str(exc))
+        return 1
     summary = service.validate_registries()
     prefix = "OK" if summary["ok"] else "ERROR"
     print(
@@ -313,7 +321,11 @@ def cmd_instances_validate() -> int:
 
 
 def cmd_instances_preview(instance_id: str) -> int:
-    service = build_instance_service()
+    try:
+        service = build_instance_service()
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(str(exc))
+        return 1
     try:
         preview = service.render_instance_preview(instance_id)
     except ValueError as exc:

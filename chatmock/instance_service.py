@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,20 @@ def _default_repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _default_profiles_root(repo_root: Path) -> Path:
+    source_root = repo_root / "config" / "profiles"
+    if source_root.exists():
+        return source_root
+    return repo_root / "chatmock" / "bundled_config" / "profiles"
+
+
+def _default_instances_root(repo_root: Path) -> Path:
+    source_root = repo_root / "config" / "instances"
+    if source_root.exists():
+        return source_root
+    return repo_root / "chatmock" / "bundled_config" / "instances"
+
+
 @dataclass
 class InstanceService:
     repo_root: Path
@@ -19,36 +34,51 @@ class InstanceService:
     instances: list[dict[str, Any]]
 
     def list_profiles(self) -> list[dict[str, Any]]:
-        return [dict(item) for item in self.profiles]
+        return [deepcopy(item) for item in self.profiles]
 
     def get_profile(self, profile_id: str) -> dict[str, Any]:
         for profile in self.profiles:
             if profile["id"] == profile_id:
-                return dict(profile)
+                return deepcopy(profile)
         raise ValueError(f"Unknown profile id: {profile_id}")
 
     def list_instances(self) -> list[dict[str, Any]]:
-        return [dict(item) for item in self.instances]
+        return [deepcopy(item) for item in self.instances]
 
     def get_instance(self, instance_id: str) -> dict[str, Any]:
         for instance in self.instances:
             if instance["id"] == instance_id:
-                return dict(instance)
+                return deepcopy(instance)
         raise ValueError(f"Unknown instance id: {instance_id}")
 
     def validate_registries(self) -> dict[str, Any]:
+        errors: list[str] = []
+        profiles: list[dict[str, Any]] = []
+        instances: list[dict[str, Any]] = []
+        try:
+            profiles = load_profiles(_default_profiles_root(self.repo_root), repo_root=self.repo_root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            errors.append(str(exc))
+        if not errors:
+            try:
+                instances = load_instances(
+                    _default_instances_root(self.repo_root),
+                    known_profile_ids={profile["id"] for profile in profiles},
+                )
+            except (FileNotFoundError, OSError, ValueError) as exc:
+                errors.append(str(exc))
         return {
-            "ok": True,
-            "profiles": [item["id"] for item in self.profiles],
-            "instances": [item["id"] for item in self.instances],
-            "errors": [],
+            "ok": not errors,
+            "profiles": [item["id"] for item in profiles],
+            "instances": [item["id"] for item in instances],
+            "errors": errors,
         }
 
     def render_instance_preview(self, instance_id: str) -> dict[str, Any]:
         instance = self.get_instance(instance_id)
         profile = self.get_profile(instance["profile_id"])
         prompt_dir = profile["prompt_dir"].rsplit("/", 1)[-1]
-        prompt_env_prefix = "CHATMOCK_CLAWMEM" if instance["id"] == "chatmock-clawmem" else "CHATMOCK"
+        prompt_env_prefix = instance.get("env_prefix") or instance["id"].upper().replace("-", "_")
 
         return {
             "instance": {
@@ -100,9 +130,9 @@ class InstanceService:
 
 def build_instance_service(*, repo_root: Path | str | None = None) -> InstanceService:
     repo_root_path = Path(repo_root) if repo_root is not None else _default_repo_root()
-    profiles = load_profiles(repo_root_path / "config" / "profiles", repo_root=repo_root_path)
+    profiles = load_profiles(_default_profiles_root(repo_root_path), repo_root=repo_root_path)
     instances = load_instances(
-        repo_root_path / "config" / "instances",
+        _default_instances_root(repo_root_path),
         known_profile_ids={profile["id"] for profile in profiles},
     )
     return InstanceService(repo_root=repo_root_path, profiles=profiles, instances=instances)

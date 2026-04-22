@@ -37,7 +37,6 @@ def create_app(
         prompt_config_path=prompt_config_path,
         reset=True,
     )
-    instance_service = build_instance_service()
 
     app.config.update(
         VERBOSE=bool(verbose),
@@ -51,7 +50,7 @@ def create_app(
         DEFAULT_WEB_SEARCH=bool(default_web_search),
         INJECT_DEFAULT_INSTRUCTIONS=bool(inject_default_instructions),
         PROMPT_MANAGER=prompt_manager,
-        INSTANCE_SERVICE=instance_service,
+        INSTANCE_SERVICE=None,
         ADMIN_TOKEN=(
             admin_token
             if isinstance(admin_token, str) and admin_token
@@ -110,6 +109,16 @@ def create_app(
                 return jsonify({"error": {"message": "Invalid admin token"}}), 403
         return None
 
+    def _get_instance_service():
+        service = app.config.get("INSTANCE_SERVICE")
+        if service is None:
+            service = build_instance_service()
+            app.config["INSTANCE_SERVICE"] = service
+        return service
+
+    def _registry_error(exc: Exception):
+        return jsonify({"error": {"message": str(exc)}}), 400
+
     @app.get("/admin/prompts")
     def admin_prompts_state():
         denied = _require_local_admin()
@@ -150,14 +159,22 @@ def create_app(
         denied = _require_local_admin()
         if denied is not None:
             return denied
-        return jsonify({"profiles": instance_service.list_profiles()})
+        try:
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        return jsonify({"profiles": service.list_profiles()})
 
     @app.get("/admin/instances")
     def admin_instances():
         denied = _require_local_admin()
         if denied is not None:
             return denied
-        return jsonify({"instances": instance_service.list_instances()})
+        try:
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        return jsonify({"instances": service.list_instances()})
 
     @app.get("/admin/instances/<instance_id>/preview")
     def admin_instance_preview(instance_id: str):
@@ -165,7 +182,11 @@ def create_app(
         if denied is not None:
             return denied
         try:
-            preview = instance_service.render_instance_preview(instance_id)
+            service = _get_instance_service()
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            return _registry_error(exc)
+        try:
+            preview = service.render_instance_preview(instance_id)
         except ValueError as exc:
             return jsonify({"error": {"message": str(exc)}}), 404
         return jsonify(preview)

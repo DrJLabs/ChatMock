@@ -85,3 +85,12 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(json.loads(buffer.getvalue())["instance"]["id"], "chatmock")
+
+    @patch("chatmock.cli.build_instance_service", side_effect=ValueError("registry broken"))
+    def test_instances_commands_return_nonzero_when_registry_build_fails(self, _mock_service) -> None:
+        for argv in (["instances", "list"], ["instances", "validate"], ["instances", "preview", "chatmock"]):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                exit_code = main(argv)
+            self.assertEqual(exit_code, 1)
+            self.assertIn("registry broken", buffer.getvalue())
