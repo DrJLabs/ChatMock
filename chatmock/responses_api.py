@@ -192,9 +192,17 @@ class SSEFrame:
 
 
 def _parse_sse_frame(raw_frame: bytes) -> Dict[str, Any] | None:
-    text = raw_frame.decode("utf-8", errors="ignore")
+    text = raw_frame.replace(b"\r\n", b"\n").replace(b"\r", b"\n").decode("utf-8", errors="ignore")
     data_lines: List[str] = []
+    event_type: str | None = None
     for line in text.splitlines():
+        if line.startswith("event:"):
+            payload = line[len("event:") :]
+            if payload.startswith(" "):
+                payload = payload[1:]
+            if payload.strip():
+                event_type = payload.strip()
+            continue
         if not line.startswith("data:"):
             continue
         payload = line[len("data:") :]
@@ -212,9 +220,27 @@ def _parse_sse_frame(raw_frame: bytes) -> Dict[str, Any] | None:
         return {"type": "[DONE]", "data": "[DONE]"}
     try:
         evt = json.loads(data)
-    except Exception:
+    except json.JSONDecodeError:
         return None
-    return evt if isinstance(evt, dict) else None
+    if not isinstance(evt, dict):
+        return None
+    if event_type and not isinstance(evt.get("type"), str):
+        evt = evt.copy()
+        evt["type"] = event_type
+    return evt
+
+
+def _split_sse_frame(buffer: bytes) -> tuple[bytes, bytes] | None:
+    matches: List[tuple[int, bytes]] = []
+    for delimiter in (b"\r\n\r\n", b"\n\n", b"\r\r"):
+        idx = buffer.find(delimiter)
+        if idx >= 0:
+            matches.append((idx, delimiter))
+    if not matches:
+        return None
+    idx, delimiter = min(matches, key=lambda item: item[0])
+    end = idx + len(delimiter)
+    return buffer[:end], buffer[end:]
 
 
 def iter_sse_frames(upstream: Any) -> Iterator[SSEFrame]:
@@ -224,10 +250,12 @@ def iter_sse_frames(upstream: Any) -> Iterator[SSEFrame]:
             continue
         if isinstance(chunk, str):
             chunk = chunk.encode("utf-8")
-        buffer += bytes(chunk).replace(b"\r\n", b"\n")
-        while b"\n\n" in buffer:
-            raw_frame, buffer = buffer.split(b"\n\n", 1)
-            raw_frame += b"\n\n"
+        buffer += bytes(chunk)
+        while True:
+            split = _split_sse_frame(buffer)
+            if split is None:
+                break
+            raw_frame, buffer = split
             yield SSEFrame(raw=raw_frame, event=_parse_sse_frame(raw_frame))
 
     if buffer:
@@ -286,12 +314,14 @@ def _best_tool_arguments(
         candidates.append(pending.get("argument_buffer"))
 
     for raw in candidates:
-        if isinstance(raw, str) and raw:
+        if isinstance(raw, str) and raw and raw.strip() not in ("{}", "[]", "null"):
             return raw
         if isinstance(raw, (dict, list)) and raw:
             return raw
 
     for raw in candidates:
+        if isinstance(raw, str) and raw:
+            return raw
         if isinstance(raw, (dict, list)):
             return raw
     return None
@@ -300,6 +330,21 @@ def _best_tool_arguments(
 class ResponsesToolCallStreamNormalizer:
     def __init__(self) -> None:
         self._pending: Dict[str, Dict[str, Any]] = {}
+
+    def flush(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for pending in self._pending.values():
+            if pending.get("added_emitted"):
+                continue
+            added_event = copy.deepcopy(pending["added_event"])
+            item = added_event.get("item")
+            if isinstance(item, dict):
+                best_args = _best_tool_arguments(pending, item=item)
+                if best_args is not None:
+                    item["arguments"] = best_args
+            out.append(added_event)
+        self._pending.clear()
+        return out
 
     def _normalize_terminal_response_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         response = event.get("response")
@@ -432,6 +477,8 @@ def iter_normalized_response_events(events: Iterable[Dict[str, Any]]) -> Iterato
     for event in events:
         for normalized in normalizer.process(event):
             yield normalized
+    for normalized in normalizer.flush():
+        yield normalized
 
 
 def aggregate_response_from_sse(
@@ -493,5 +540,17 @@ def stream_upstream_bytes(
                     yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
                 else:
                     yield f"data: {payload}\n\n".encode("utf-8")
+        for normalized in normalizer.flush():
+            if callable(on_event):
+                try:
+                    on_event(normalized)
+                except Exception:
+                    pass
+            event_type = normalized.get("type")
+            payload = json.dumps(normalized, ensure_ascii=False)
+            if isinstance(event_type, str) and event_type.strip():
+                yield f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8")
+            else:
+                yield f"data: {payload}\n\n".encode("utf-8")
     finally:
         upstream.close()
