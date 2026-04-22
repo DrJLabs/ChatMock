@@ -44,7 +44,10 @@ def _load_yaml_object(path: Any) -> dict[str, Any]:
 
 def _default_config_root(repo_root: Path | None) -> Any:
     if repo_root is not None:
-        return repo_root / "config" / "profiles"
+        source_root = repo_root / "config" / "profiles"
+        if source_root.exists():
+            return source_root
+        return repo_root / "bundled_config" / "profiles"
     return _package_root() / "bundled_config" / "profiles"
 
 
@@ -112,9 +115,10 @@ def _normalize_profile(data: dict[str, Any], *, repo_root: Path) -> dict[str, An
 
 def load_profiles(config_root: Path | str | None = None, *, repo_root: Path | str | None = None) -> list[dict[str, Any]]:
     repo_root_path = Path(repo_root) if repo_root is not None else None
-    config_root_path = Path(config_root) if config_root is not None else _default_config_root(repo_root_path)
     if repo_root_path is None:
-        repo_root_path = _default_repo_root() if (Path(_default_repo_root()) / "config" / "profiles").exists() else _package_root()
+        root = _default_repo_root()
+        repo_root_path = root if (root / "config" / "profiles").exists() else _package_root()
+    config_root_path = Path(config_root) if config_root is not None else _default_config_root(repo_root_path)
 
     profiles: list[dict[str, Any]] = []
     seen_ids: set[str] = set()

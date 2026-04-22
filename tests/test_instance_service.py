@@ -210,6 +210,29 @@ class InstanceServiceTests(unittest.TestCase):
                 {"shared-auth-default": ["chatmock", "chatmock-clawmem"]},
             )
 
+    def test_render_instance_preview_preserves_full_prompt_dir_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = root / "prompts" / "team" / "bare"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            (prompt_dir / "prompt.md").write_text("team bare base", encoding="utf-8")
+            (prompt_dir / "prompt_gpt5_codex.md").write_text("team bare codex", encoding="utf-8")
+            profiles_root = root / "config" / "profiles"
+            instances_root = root / "config" / "instances"
+            profiles_root.mkdir(parents=True, exist_ok=True)
+            instances_root.mkdir(parents=True, exist_ok=True)
+            nested_profile = BARE_PROFILE_YAML.replace("prompt_dir: prompts/bare", "prompt_dir: prompts/team/bare")
+            (profiles_root / "bare.yaml").write_text(nested_profile, encoding="utf-8")
+            (instances_root / "chatmock.yaml").write_text(CHATMOCK_INSTANCE_YAML, encoding="utf-8")
+            service = build_instance_service(repo_root=root)
+
+            preview = service.render_instance_preview("chatmock")
+
+            self.assertEqual(
+                preview["runtime"]["environment"]["CHATMOCK_PROMPT_DIR"],
+                "/app/prompts/team/bare",
+            )
+
     def test_list_profiles_returns_deep_copies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

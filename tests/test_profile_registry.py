@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from chatmock.profile_registry import load_profiles
 
@@ -81,3 +82,16 @@ class ProfileRegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Profile ui.order must be an integer"):
                 load_profiles(config_root, repo_root=root)
+
+    def test_load_profiles_uses_source_config_root_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_prompt_set(root, "bare")
+            config_root = root / "config" / "profiles"
+            config_root.mkdir(parents=True, exist_ok=True)
+            (config_root / "bare.yaml").write_text(BARE_PROFILE_YAML, encoding="utf-8")
+
+            with patch("chatmock.profile_registry._default_repo_root", return_value=root):
+                profiles = load_profiles()
+
+            self.assertEqual([profile["id"] for profile in profiles], ["bare"])

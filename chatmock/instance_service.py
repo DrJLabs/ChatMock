@@ -77,7 +77,7 @@ class InstanceService:
     def render_instance_preview(self, instance_id: str) -> dict[str, Any]:
         instance = self.get_instance(instance_id)
         profile = self.get_profile(instance["profile_id"])
-        prompt_dir = profile["prompt_dir"].rsplit("/", 1)[-1]
+        prompt_dir = profile["prompt_dir"]
         prompt_env_prefix = instance.get("env_prefix") or instance["id"].upper().replace("-", "_")
 
         return {
@@ -101,7 +101,7 @@ class InstanceService:
             },
             "runtime": {
                 "environment": {
-                    f"{prompt_env_prefix}_PROMPT_DIR": f"/app/prompts/{prompt_dir}",
+                    f"{prompt_env_prefix}_PROMPT_DIR": f"/app/{prompt_dir}",
                     f"{prompt_env_prefix}_PROMPT_CONFIG": instance["prompt_config_path"],
                     "CHATGPT_LOCAL_HOME": "/data",
                 },
