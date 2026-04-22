@@ -23,6 +23,7 @@ from .reasoning import (
     apply_reasoning_to_message,
     build_reasoning_param,
     extract_reasoning_from_model_name,
+    resolve_request_reasoning_param,
 )
 from .session import (
     clear_responses_reuse_state,
@@ -199,12 +200,11 @@ def chat_completions() -> Response:
             {"type": "message", "role": "user", "content": [{"type": "input_text", "text": payload.get("prompt")}]}
         ]
 
-    model_reasoning = extract_reasoning_from_model_name(requested_model)
-    reasoning_overrides = payload.get("reasoning") if isinstance(payload.get("reasoning"), dict) else model_reasoning
-    reasoning_param = build_reasoning_param(
-        reasoning_effort,
-        reasoning_summary,
-        reasoning_overrides,
+    reasoning_param = resolve_request_reasoning_param(
+        payload,
+        requested_model=requested_model,
+        base_effort=reasoning_effort,
+        base_summary=reasoning_summary,
         allowed_efforts=allowed_efforts_for_model(model),
     )
     service_tier, tier_error = _service_tier_from_payload(model, payload, verbose=verbose)

@@ -36,6 +36,34 @@ def build_reasoning_param(
     return reasoning
 
 
+def resolve_request_reasoning_param(
+    payload: Dict[str, Any],
+    *,
+    requested_model: str | None,
+    base_effort: str = "medium",
+    base_summary: str = "auto",
+    allowed_efforts: frozenset[str] | None = None,
+) -> Dict[str, Any]:
+    reasoning_overrides = (
+        payload.get("reasoning")
+        if isinstance(payload.get("reasoning"), dict)
+        else extract_reasoning_from_model_name(requested_model)
+    )
+
+    standard_effort = payload.get("reasoning_effort")
+    if isinstance(standard_effort, str) and standard_effort.strip():
+        merged_overrides = dict(reasoning_overrides) if isinstance(reasoning_overrides, dict) else {}
+        merged_overrides["effort"] = standard_effort
+        reasoning_overrides = merged_overrides
+
+    return build_reasoning_param(
+        base_effort,
+        base_summary,
+        reasoning_overrides,
+        allowed_efforts=allowed_efforts,
+    )
+
+
 def apply_reasoning_to_message(
     message: Dict[str, Any],
     reasoning_summary_text: str,

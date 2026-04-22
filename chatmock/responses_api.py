@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List, Literal
 
-from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS
+from .config import BASE_INSTRUCTIONS, GPT5_CODEX_INSTRUCTIONS, get_prompt_manager
 from .fast_mode import ServiceTierResolution, resolve_service_tier
 from .model_registry import (
     allowed_efforts_for_model,
@@ -37,9 +37,20 @@ class NormalizedResponsesRequest:
 
 
 def instructions_for_model(config: Dict[str, Any], model: str) -> str:
-    base = config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
+    prompt_manager = config.get("PROMPT_MANAGER")
+    if prompt_manager is None:
+        prompt_manager = get_prompt_manager()
+    base = (
+        prompt_manager.get_base_instructions()
+        if hasattr(prompt_manager, "get_base_instructions")
+        else config.get("BASE_INSTRUCTIONS", BASE_INSTRUCTIONS)
+    )
     if uses_codex_instructions(model):
-        codex = config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        codex = (
+            prompt_manager.get_codex_instructions()
+            if hasattr(prompt_manager, "get_codex_instructions")
+            else config.get("GPT5_CODEX_INSTRUCTIONS") or GPT5_CODEX_INSTRUCTIONS
+        )
         if isinstance(codex, str) and codex.strip():
             return codex
     return base
