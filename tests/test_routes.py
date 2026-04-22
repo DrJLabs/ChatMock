@@ -229,6 +229,36 @@ class RouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 403)
 
+    @patch.dict("os.environ", {"CHATMOCK_ADMIN_TRUSTED_IPS": "10.0.0.0/8"})
+    def test_admin_prompts_allows_configured_trusted_ip_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "10.12.0.5"})
+
+            self.assertEqual(response.status_code, 200)
+
+    @patch.dict("os.environ", {"CHATMOCK_ALLOW_ADMIN_EXTERNAL": "true"})
+    def test_admin_prompts_external_access_requires_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
+
+            self.assertEqual(response.status_code, 403)
+
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_chat_completions_invalid_reasoning_effort_does_not_override_nested_reasoning(self, mock_start) -> None:
         mock_start.return_value = (

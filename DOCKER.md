@@ -50,6 +50,12 @@ CHATMOCK_ALLOW_ADMIN_EXTERNAL=true
 
 and rely on `CHATMOCK_ADMIN_TOKEN` for access control. External admin access is rejected unless a non-empty `CHATMOCK_ADMIN_TOKEN` is configured.
 
+For non-standard container networks, you can also trust specific admin IPs or CIDR ranges:
+
+```bash
+CHATMOCK_ADMIN_TRUSTED_IPS=172.17.0.1,10.0.0.0/8
+```
+
 Example: switch the main service to the ClawMem prompt directory without restarting the container:
 
 ```bash
@@ -121,6 +127,8 @@ Set options in `.env` or pass environment variables:
 - `CHATMOCK_CLAWMEM_PROMPT_DIR`: default prompt directory for the ClawMem service
 - `CHATMOCK_CLAWMEM_PROMPT_CONFIG`: runtime prompt config file for the ClawMem service
 - `CHATMOCK_ADMIN_TOKEN`: optional token required by the `/admin/prompts/*` endpoints when set
+- `CHATMOCK_ADMIN_TRUSTED_IPS`: optional comma-separated trusted admin IPs/CIDRs for non-standard local container networks
+- `CHATMOCK_ALLOW_ADMIN_EXTERNAL`: allow non-local admin access only when paired with `CHATMOCK_ADMIN_TOKEN`
 - `CHATMOCK_TEST_PORT`: main service port for the isolated test stack
 - `CHATMOCK_TEST_CLAWMEM_PORT`: ClawMem service port for the isolated test stack
 - `CHATMOCK_TEST_LOGIN_PORT`: login callback port for the isolated test stack

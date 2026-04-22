@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import os
 
 from flask import Flask, jsonify, request
@@ -65,9 +66,32 @@ def create_app(
         allow_admin_external = os.getenv("CHATMOCK_ALLOW_ADMIN_EXTERNAL", "false").lower() == "true"
         allowed_local_addresses = {"127.0.0.1", "::1"}
         allowed_bridge_addresses = {"172.17.0.1", "172.18.0.1"}
+        trusted_remote_spec = os.getenv("CHATMOCK_ADMIN_TRUSTED_IPS", "").strip()
+
+        def _is_in_trusted_ranges(value: str | None) -> bool:
+            if not isinstance(value, str) or not value or not trusted_remote_spec:
+                return False
+            try:
+                remote_ip = ipaddress.ip_address(value)
+            except ValueError:
+                return False
+            for token in (item.strip() for item in trusted_remote_spec.split(",")):
+                if not token:
+                    continue
+                try:
+                    if "/" in token:
+                        if remote_ip in ipaddress.ip_network(token, strict=False):
+                            return True
+                    elif remote_ip == ipaddress.ip_address(token):
+                        return True
+                except ValueError:
+                    continue
+            return False
+
         is_allowed_bridge = isinstance(remote_addr, str) and remote_addr in allowed_bridge_addresses
         is_local = isinstance(remote_addr, str) and remote_addr in allowed_local_addresses
-        if not (is_local or is_allowed_bridge or allow_admin_external):
+        is_trusted_remote = _is_in_trusted_ranges(remote_addr)
+        if not (is_local or is_allowed_bridge or is_trusted_remote or allow_admin_external):
             return jsonify({"error": {"message": "Admin routes are local-only"}}), 403
         expected_token = app.config.get("ADMIN_TOKEN")
         provided_token = (
@@ -75,7 +99,7 @@ def create_app(
             or request.headers.get("X-Admin-Token")
             or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         )
-        if allow_admin_external and not (is_local or is_allowed_bridge):
+        if allow_admin_external and not (is_local or is_allowed_bridge or is_trusted_remote):
             if not (isinstance(expected_token, str) and expected_token):
                 return jsonify({"error": {"message": "External admin access requires CHATMOCK_ADMIN_TOKEN"}}), 403
         if isinstance(expected_token, str) and expected_token:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -167,9 +168,36 @@ class PromptManager:
             "base_prompt_path": config["base_prompt_path"],
             "codex_prompt_path": config["codex_prompt_path"],
         }
-        temp_path = self._config_path.with_suffix(".tmp")
-        temp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        with tempfile.NamedTemporaryFile(
+            "w",
+            dir=self._config_path.parent,
+            delete=False,
+            encoding="utf-8",
+        ) as temp_file:
+            temp_file.write(json.dumps(payload, indent=2) + "\n")
+            temp_path = Path(temp_file.name)
         temp_path.replace(self._config_path)
+
+    def _load_prompt_contents(self, normalized: dict[str, str | None]) -> tuple[str, str]:
+        base_text = _read_prompt_text(Path(normalized["base_prompt_path"]))
+        codex_text = _read_prompt_text(Path(normalized["codex_prompt_path"]))
+        return base_text, codex_text
+
+    def _set_loaded_state(
+        self,
+        normalized: dict[str, str | None],
+        base_text: str,
+        codex_text: str,
+    ) -> PromptConfigState:
+        self._base_instructions = base_text
+        self._codex_instructions = codex_text
+        self._state = PromptConfigState(
+            prompt_dir=normalized.get("prompt_dir"),
+            base_prompt_path=normalized["base_prompt_path"],
+            codex_prompt_path=normalized["codex_prompt_path"],
+            loaded_at=time.time(),
+        )
+        return self._state
 
     def reload(self, *, save_defaults: bool = False) -> PromptConfigState:
         with self._lock:
@@ -184,17 +212,8 @@ class PromptManager:
                     self._write_config(normalized)
             else:
                 normalized = self._normalize_config(persisted)
-            base_text = _read_prompt_text(Path(normalized["base_prompt_path"]))
-            codex_text = _read_prompt_text(Path(normalized["codex_prompt_path"]))
-            self._base_instructions = base_text
-            self._codex_instructions = codex_text
-            self._state = PromptConfigState(
-                prompt_dir=normalized.get("prompt_dir"),
-                base_prompt_path=normalized["base_prompt_path"],
-                codex_prompt_path=normalized["codex_prompt_path"],
-                loaded_at=time.time(),
-            )
-            return self._state
+            base_text, codex_text = self._load_prompt_contents(normalized)
+            return self._set_loaded_state(normalized, base_text, codex_text)
 
     def persist_defaults(self) -> PromptConfigState:
         with self._lock:
@@ -226,8 +245,9 @@ class PromptManager:
                 "codex_prompt_path": codex_prompt_path,
             }
             normalized = self._normalize_config(merged)
+            base_text, codex_text = self._load_prompt_contents(normalized)
             self._write_config(normalized)
-            return self.reload()
+            return self._set_loaded_state(normalized, base_text, codex_text)
 
     def get_state(self) -> PromptConfigState:
         with self._lock:
