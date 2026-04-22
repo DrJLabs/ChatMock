@@ -7,7 +7,7 @@ services:
     environment:
       - CHATGPT_LOCAL_HOME=/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - chatmock_data:/data
       - ./prompt.md:/app/prompt.md:ro
@@ -28,7 +28,7 @@ services:
     volumes:
       - chatmock_data:/data
     ports:
-      - "1455:1455"
+      - "127.0.0.1:1455:1455"
 
 volumes:
   chatmock_data:

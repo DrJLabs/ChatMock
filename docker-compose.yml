@@ -10,8 +10,8 @@ services:
       - "${CHATMOCK_BIND_HOST:-127.0.0.1}:${PORT:-8000}:8000"
     volumes:
       - chatmock_data:${CHATGPT_LOCAL_HOME:-/data}
-      - ./prompts/general/prompt.md:/app/prompt.md:ro
-      - ./prompts/general/prompt_gpt5_codex.md:/app/prompt_gpt5_codex.md:ro
+      - ./prompts/bare/prompt.md:/app/prompt.md:ro
+      - ./prompts/bare/prompt_gpt5_codex.md:/app/prompt_gpt5_codex.md:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\" "]
       interval: 10s
