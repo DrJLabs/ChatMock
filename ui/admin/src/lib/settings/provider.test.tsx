@@ -86,4 +86,18 @@ describe("UISettingsProvider", () => {
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
     expect(window.localStorage.getItem("chatmock.admin.ui-settings")).toContain("\"codeScale\":120");
   });
+
+  it("applies theme and code scale styles to the document root", () => {
+    render(
+      <UISettingsProvider>
+        <Harness />
+      </UISettingsProvider>,
+    );
+
+    fireEvent.click(screen.getByText("preview theme"));
+    fireEvent.click(screen.getByText("preview scale 121"));
+
+    expect(document.documentElement.dataset.theme).toBe("midnight");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+  });
 });
