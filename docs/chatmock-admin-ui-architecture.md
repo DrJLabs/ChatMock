@@ -31,11 +31,12 @@ The Docker image builds the Vite app in a Node builder stage, copies the built `
 - `/admin/ui` -> `CurrentStateRoute`
 - `/admin/ui/edit-config` -> `EditConfigRoute`
 - `/admin/ui/prompt-files` -> `PromptFilesRoute`
+- `/admin/ui/settings` -> `SettingsRoute`
 
 Shared chrome is provided by `AdminLayout`, which owns:
 
 - the page title and status banner
-- the three-item operator nav
+- the operator nav for `Current State`, `Edit Config`, `Prompt Files`, and `Settings`
 - the outlet shell for active route content
 
 ## Composition Root
@@ -48,6 +49,7 @@ It owns:
 - all mutation hooks for profiles, instances, draft actions, runtime actions, and prompt file operations
 - derived global operator state such as `busy`, `error`, `notice`, `statusText`
 - the `AdminAppContext` provider consumed by route adapters
+- the browser-local settings provider wiring from `ui/admin/src/lib/settings/*`
 
 This means `App.tsx` is intentionally not a presentational component. It is the shared admin-control provider.
 
@@ -144,6 +146,7 @@ Files:
 - `ui/admin/src/features/profiles/ProfilesPage.tsx`
 - `ui/admin/src/features/instances/InstancesPage.tsx`
 - `ui/admin/src/features/prompt-files/PromptFilesPage.tsx`
+- `ui/admin/src/features/settings/SettingsPage.tsx`
 - `ui/admin/src/features/runtime-actions/RuntimeActionsPage.tsx`
 - `ui/admin/src/features/draft-review/DraftReviewPage.tsx`
 
@@ -158,9 +161,33 @@ Notes:
 - `CurrentStateRoute` uses `DashboardPage` as the operator landing surface.
 - `EditConfigPage` composes the structural editing subfeatures.
 - `PromptFilesPage` owns immediate prompt-file editing and explicitly does not participate in draft/apply.
+- `SettingsRoute` uses `SettingsPage` as the browser-local preferences surface.
+- `SettingsPage` owns browser-local preferences only: applied theme and code-size settings, live preview, and `Apply` / `Reset` behavior.
+- `BehaviorSettingsSection` and `AboutSettingsSection` are scaffold sections in the first pass and stay within the settings route boundary.
 - `RuntimeActionsPage` and `DraftReviewPage` remain feature modules used inside larger route surfaces rather than top-level routes.
 
-### 6. Form adapters
+### 6. Browser-Local Settings Layer
+
+Files:
+
+- `ui/admin/src/lib/settings/types.ts`
+- `ui/admin/src/lib/settings/theme-presets.ts`
+- `ui/admin/src/lib/settings/storage.ts`
+- `ui/admin/src/lib/settings/provider.tsx`
+
+Responsibilities:
+
+- define the browser-local settings shape, defaults, and storage key
+- provide theme preset metadata and preview/apply/reset state
+- apply the active theme to the document root and expose the live preview layer
+- keep settings state isolated from backend config and runtime admin data
+
+Should not own:
+
+- server-backed preferences or admin API calls
+- operator workflow routing beyond the settings route
+- page-specific layout for other admin surfaces
+### 7. Form adapters
 
 Files:
 
@@ -177,7 +204,7 @@ Should not own:
 - network requests
 - page layout
 
-### 7. Local component layers
+### 8. Local component layers
 
 Primitive copied components:
 

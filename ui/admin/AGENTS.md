@@ -25,6 +25,7 @@ Use Context7 for current third-party library APIs:
 - Treat `src/App.tsx` as the admin orchestration/provider boundary, not a presentational leaf.
 - Treat `src/router.tsx` and `src/layouts/AdminLayout.tsx` as route and shell ownership only.
 - Treat `src/lib/query/` and `src/lib/api/client.ts` as the server-state and request boundary.
+- Treat `src/lib/settings/` as the browser-local preview/apply/reset boundary for theme and code-size preferences.
 - Treat `src/forms/` as typed form adapters, not network or layout code.
 - Treat `src/components/ui/` as repo-owned copied primitives. Upstream shadcn docs are reference material, but local component files are the real source of truth.
 - Treat `src/components/shared/` as the ChatMock normalization layer for repeated operator-facing wrappers and patterns.
@@ -35,7 +36,9 @@ Use Context7 for current third-party library APIs:
   - `Current State`
   - `Edit Config`
   - `Prompt Files`
+  - `Settings`
 - Keep prompt-file editing separate from draft/apply structural config flows.
+- Keep browser-local settings separate from backend admin config. Theme presets and preview state live in the settings layer and local CSS, not in server-side config.
 - Do not add a second browser auth/session model without explicit approval.
 - When changing route structure, component layers, or SPA packaging/runtime paths, update `docs/chatmock-admin-ui-architecture.md` in the same branch.
 
