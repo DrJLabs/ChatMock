@@ -189,7 +189,6 @@
 
   code {
     @apply block rounded-2xl bg-muted px-3 py-2 text-sm text-primary;
-    font-size: calc(0.875rem * (var(--admin-code-scale) / 100));
     line-height: 1.65;
     overflow-wrap: anywhere;
   }
@@ -611,10 +610,11 @@
 
   .prompt-textarea {
     @apply min-h-96 leading-relaxed;
-    font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
   }
 
-  .preview-card code {
+  .prompt-textarea,
+  .preview-card code,
+  .advanced-card code {
     font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
   }
 }
