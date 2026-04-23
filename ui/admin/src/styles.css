@@ -4,7 +4,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
+:root,
+:root[data-theme="obsidian"] {
   --admin-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --admin-code-scale: 100;
   --background: #0a0d11;
@@ -36,41 +37,6 @@
   --radius: 0.75rem;
   --shadow-panel: 0 20px 48px -28px rgba(2, 8, 19, 0.64);
   --shadow-soft: 0 14px 32px -26px rgba(2, 8, 19, 0.5);
-  --sidebar: rgb(12 15 19 / 0.95);
-  --sidebar-foreground: #edf1f7;
-  --sidebar-primary: #d5dde8;
-  --sidebar-primary-foreground: #0a0d11;
-  --sidebar-accent: #1b2129;
-  --sidebar-accent-foreground: #f7f9fc;
-  --sidebar-border: rgb(237 241 247 / 0.12);
-  --sidebar-ring: rgb(213 221 232 / 0.38);
-}
-
-:root[data-theme="obsidian"] {
-  --background: #0a0d11;
-  --foreground: #edf1f7;
-  --card: rgb(18 22 28 / 0.94);
-  --card-foreground: #edf1f7;
-  --muted: #161b22;
-  --muted-foreground: #9ca7b7;
-  --border: rgb(237 241 247 / 0.12);
-  --input: rgb(237 241 247 / 0.16);
-  --primary: #d5dde8;
-  --primary-foreground: #0a0d11;
-  --secondary: #1b2129;
-  --secondary-foreground: #edf1f7;
-  --destructive: #f4a7a7;
-  --destructive-foreground: #2b0d0d;
-  --accent: #1b2129;
-  --accent-foreground: #f7f9fc;
-  --popover: rgb(13 16 21 / 0.98);
-  --popover-foreground: #edf1f7;
-  --ring: rgb(213 221 232 / 0.38);
-  --chart-1: #d5dde8;
-  --chart-2: #7b8798;
-  --chart-3: #5c6674;
-  --chart-4: #3a414d;
-  --chart-5: #262c35;
   --sidebar: rgb(12 15 19 / 0.95);
   --sidebar-foreground: #edf1f7;
   --sidebar-primary: #d5dde8;
@@ -309,6 +275,7 @@
   .mode-header-card,
   .stat-card {
     border: 1px solid var(--border);
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--card) 92%, white 8%) 0%,
@@ -340,6 +307,7 @@
 
   .status-banner {
     @apply min-w-[240px] rounded-[1.2rem] px-4 py-4 text-primary-foreground;
+
     background: linear-gradient(
       160deg,
       color-mix(in srgb, var(--primary) 86%, var(--background) 14%) 0%,
@@ -420,12 +388,14 @@
   .mode-header-card {
     @apply flex items-start justify-between gap-4;
     border: 1px solid var(--border);
+
     background: linear-gradient(
       145deg,
       color-mix(in srgb, var(--primary) 22%, transparent) 0%,
       color-mix(in srgb, var(--background) 90%, black 10%) 100%
     );
     box-shadow: var(--shadow-panel);
+
     color: var(--primary-foreground);
   }
 
@@ -460,6 +430,7 @@
 
   .primary-button {
     @apply text-primary-foreground;
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
@@ -508,8 +479,10 @@
   .theme-preset-card {
     @apply grid gap-2 rounded-[1rem] border px-4 py-4 text-left transition-all duration-150;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
+
     background:
       linear-gradient(180deg, rgba(12, 23, 37, 0.96) 0%, rgba(8, 16, 28, 0.97) 100%);
+
     color: var(--foreground);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
@@ -629,6 +602,7 @@
 
   .list-item {
     @apply grid gap-1 rounded-[1rem] border border-transparent px-4 py-4 text-left;
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--card) 90%, white 10%) 0%,
@@ -697,6 +671,7 @@
   .preview-card {
     @apply grid gap-2 rounded-[1rem] border px-4 py-4;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--card) 92%, white 8%) 0%,
@@ -707,6 +682,7 @@
   .advanced-card {
     @apply mt-4 rounded-[1rem] border px-4 py-4;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--card) 92%, white 8%) 0%,

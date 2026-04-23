@@ -165,6 +165,12 @@ At runtime the Flask app uses:
 
 unless an explicit `admin_ui_dist_dir` or env override is provided.
 
+The runtime image now switches to the non-root `chatmock` user. Named Docker volumes preserve the in-image `/data` ownership, but a host bind mount will override it with the host directory's UID/GID. If you bind-mount `/data`, make sure the host path is writable by the container user, use a Compose `user:` override, or fix host ownership first:
+
+```bash
+sudo chown -R <container-uid>:<container-gid> /path/to/your/chatmock-data
+```
+
 Flask serves the built SPA at:
 
 - `GET /admin/ui`

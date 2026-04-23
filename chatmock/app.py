@@ -32,7 +32,8 @@ def _discover_default_gateway_ips() -> set[str]:
             continue
         destination, gateway, flags = fields[1], fields[2], fields[3]
         try:
-            if destination != "00000000" or not (int(flags, 16) & 0x2):
+            flag_bits = int(flags, 16)
+            if destination != "00000000" or (flag_bits & 0x3) != 0x3:
                 continue
             gateway_bytes = bytes.fromhex(gateway)
             if len(gateway_bytes) != 4:
@@ -58,7 +59,7 @@ def create_app(
     prompt_dir: str | None = None,
     prompt_config_path: str | None = None,
     admin_token: str | None = None,
-    admin_ui_dist_dir: str | None = None,
+    admin_ui_dist_dir: str | Path | None = None,
     repo_root: str | None = None,
     profiles_root: str | None = None,
     instances_root: str | None = None,
@@ -67,6 +68,12 @@ def create_app(
     app = Flask(__name__)
     repo_root_path = Path(repo_root) if isinstance(repo_root, str) and repo_root else None
     allowed_gateway_addresses = _discover_default_gateway_ips()
+    if isinstance(admin_ui_dist_dir, Path):
+        configured_admin_ui_dist_dir: str | Path | None = admin_ui_dist_dir
+    elif isinstance(admin_ui_dist_dir, str) and admin_ui_dist_dir.strip():
+        configured_admin_ui_dist_dir = admin_ui_dist_dir
+    else:
+        configured_admin_ui_dist_dir = os.getenv("CHATMOCK_ADMIN_UI_DIST_DIR") or None
     prompt_manager = get_prompt_manager(
         prompt_dir=prompt_dir,
         prompt_config_path=prompt_config_path,
@@ -87,11 +94,7 @@ def create_app(
         PROMPT_MANAGER=prompt_manager,
         INSTANCE_SERVICE=None,
         DRAFT_SERVICE=None,
-        ADMIN_UI_DIST_DIR=(
-            admin_ui_dist_dir
-            if isinstance(admin_ui_dist_dir, str) and admin_ui_dist_dir.strip()
-            else os.getenv("CHATMOCK_ADMIN_UI_DIST_DIR") or None
-        ),
+        ADMIN_UI_DIST_DIR=configured_admin_ui_dist_dir,
         ALLOWED_GATEWAY_ADDRESSES=allowed_gateway_addresses,
         REPO_ROOT=repo_root_path,
         PROFILES_ROOT=profiles_root,

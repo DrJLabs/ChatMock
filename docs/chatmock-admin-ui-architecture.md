@@ -12,6 +12,7 @@ This is the source of truth for the repo-owned admin UI shape. Use upstream libr
 - SPA basename: `/admin/ui`
 - Backend API base: same-origin `/admin/*`
 - Trust model: no second browser auth layer; access relies on the existing admin-route trust boundary
+- Gateway auto-discovery reads `/proc/net/route`, so it only auto-trusts IPv4 default gateways; use `CHATMOCK_ADMIN_TRUSTED_IPS` for IPv6 or other manual trust overrides
 
 The browser does not maintain a separate session model. The frontend uses same-origin `fetch(...)` calls against the Flask admin routes in `ui/admin/src/lib/api/client.ts`.
 
@@ -197,6 +198,7 @@ Should not own:
 - server-backed preferences or admin API calls
 - operator workflow routing beyond the settings route
 - page-specific layout for other admin surfaces
+
 ### 7. Form adapters
 
 Files:

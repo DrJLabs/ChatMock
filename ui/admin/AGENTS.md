@@ -48,8 +48,8 @@ Use Context7 for current third-party library APIs:
 Useful checks from repo root:
 
 ```bash
-./.venv/bin/python -m pytest tests/test_admin_routes.py -q
-./.venv/bin/python -m pytest tests/test_routes.py -q
+python -m pytest tests/test_admin_routes.py -q
+python -m pytest tests/test_routes.py -q
 cd ui/admin && npm test
 cd ui/admin && npm run build
 ```
