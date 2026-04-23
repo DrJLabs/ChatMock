@@ -7,7 +7,11 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import { loadAppliedUISettings, saveAppliedUISettings } from "./storage";
+import {
+  loadAppliedUISettings,
+  normalizeUISettings,
+  saveAppliedUISettings,
+} from "./storage";
 import { DEFAULT_UI_SETTINGS, type ThemeId, type UISettings } from "./types";
 
 type UISettingsContextValue = {
@@ -16,8 +20,8 @@ type UISettingsContextValue = {
   isDirty: boolean;
   setDraftThemeId: (themeId: ThemeId) => void;
   setDraftCodeScale: (codeScale: number) => void;
-  applyDraft: () => void;
-  resetDraft: () => void;
+  applyUISettingsDraft: () => void;
+  resetUISettingsDraft: () => void;
 };
 
 const UISettingsContext = createContext<UISettingsContextValue | null>(null);
@@ -41,6 +45,26 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
     applySettingsToDocument(draftSettings);
   }, [draftSettings]);
 
+  const setDraftThemeId = (themeId: ThemeId) => {
+    setDraftSettings((current) => normalizeUISettings({ ...current, themeId }));
+  };
+
+  const setDraftCodeScale = (codeScale: number) => {
+    setDraftSettings((current) => normalizeUISettings({ ...current, codeScale }));
+  };
+
+  const applyUISettingsDraft = () => {
+    const next = normalizeUISettings(draftSettings);
+
+    setAppliedSettings(next);
+    setDraftSettings(next);
+    saveAppliedUISettings(next);
+  };
+
+  const resetUISettingsDraft = () => {
+    setDraftSettings(appliedSettings);
+  };
+
   const value = useMemo<UISettingsContextValue>(
     () => ({
       appliedSettings,
@@ -48,17 +72,10 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
       isDirty:
         appliedSettings.themeId !== draftSettings.themeId ||
         appliedSettings.codeScale !== draftSettings.codeScale,
-      setDraftThemeId: (themeId) =>
-        setDraftSettings((current) => ({ ...current, themeId })),
-      setDraftCodeScale: (codeScale) =>
-        setDraftSettings((current) => ({ ...current, codeScale })),
-      applyDraft: () => {
-        setAppliedSettings(draftSettings);
-        saveAppliedUISettings(draftSettings);
-      },
-      resetDraft: () => {
-        setDraftSettings(appliedSettings);
-      },
+      setDraftThemeId,
+      setDraftCodeScale,
+      applyUISettingsDraft,
+      resetUISettingsDraft,
     }),
     [appliedSettings, draftSettings],
   );
