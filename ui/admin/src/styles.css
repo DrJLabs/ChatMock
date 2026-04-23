@@ -209,6 +209,7 @@
 
   body {
     @apply m-0 min-h-screen min-w-80 font-sans antialiased bg-background text-foreground;
+
     background-image:
       radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 18%, transparent), transparent 30%),
       radial-gradient(circle at bottom right, color-mix(in srgb, var(--chart-2) 16%, transparent), transparent 30%),
@@ -237,6 +238,7 @@
 
   code {
     @apply block rounded-2xl bg-muted px-3 py-2 text-sm text-primary;
+
     line-height: 1.65;
     overflow-wrap: anywhere;
   }
@@ -336,6 +338,7 @@
 
   .nav-button {
     @apply block w-full rounded-[1rem] px-4 py-3 text-left font-semibold no-underline transition-all duration-150;
+
     color: color-mix(in srgb, var(--muted-foreground) 86%, var(--primary));
   }
 
@@ -345,6 +348,7 @@
 
   .nav-button.active {
     @apply text-primary-foreground;
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
@@ -396,7 +400,7 @@
     );
     box-shadow: var(--shadow-panel);
 
-    color: var(--primary-foreground);
+    color: var(--foreground);
   }
 
   .current-state-hero .eyebrow,
@@ -469,11 +473,8 @@
   }
 
   .segment-button.active {
-    @apply bg-white text-foreground;
-  }
-
-  .technical-text {
-    line-height: 1.65;
+    @apply bg-white;
+    color: color-mix(in srgb, var(--background) 92%, black 8%);
   }
 
   .theme-preset-card {
@@ -612,6 +613,7 @@
 
   .list-item.active {
     @apply border-white/10 text-primary-foreground;
+
     background: linear-gradient(
       180deg,
       color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
@@ -638,6 +640,7 @@
   .form-grid label span,
   .picker-field span {
     @apply text-sm;
+
     color: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
   }
 
@@ -647,6 +650,7 @@
   .picker-field select,
   .prompt-textarea {
     @apply w-full rounded-[1rem] border px-4 py-3 text-foreground;
+
     background: color-mix(in srgb, var(--background) 84%, black 16%);
     border-color: var(--input);
   }
@@ -692,6 +696,7 @@
 
   .advanced-card summary {
     @apply font-semibold;
+
     color: color-mix(in srgb, var(--primary) 78%, var(--muted-foreground));
   }
 
@@ -714,6 +719,7 @@
     font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
   }
 
+  .technical-text,
   .preview-card code,
   .advanced-card code {
     line-height: 1.65;

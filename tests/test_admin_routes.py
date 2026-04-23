@@ -226,6 +226,7 @@ def test_discover_default_gateway_ips_requires_gateway_and_up_flags():
             "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
             "eth0\t00000000\t010011AC\t0002\t0\t0\t0\t00000000\t0\t0\t0",
             "eth1\t00000000\t020011AC\t0003\t0\t0\t0\t00000000\t0\t0\t0",
+            "eth2\t00000000\t030011AC\t0001\t0\t0\t0\t00000000\t0\t0\t0",
         ]
     )
 

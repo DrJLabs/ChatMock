@@ -68,7 +68,7 @@ def create_app(
     app = Flask(__name__)
     repo_root_path = Path(repo_root) if isinstance(repo_root, str) and repo_root else None
     allowed_gateway_addresses = _discover_default_gateway_ips()
-    if isinstance(admin_ui_dist_dir, Path):
+    if isinstance(admin_ui_dist_dir, Path) and str(admin_ui_dist_dir).strip():
         configured_admin_ui_dist_dir: str | Path | None = admin_ui_dist_dir
     elif isinstance(admin_ui_dist_dir, str) and admin_ui_dist_dir.strip():
         configured_admin_ui_dist_dir = admin_ui_dist_dir
