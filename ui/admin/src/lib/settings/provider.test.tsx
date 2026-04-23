@@ -136,6 +136,13 @@ describe("UISettingsProvider", () => {
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("115");
   });
 
+  it("seeds the obsidian default when no stored settings exist", () => {
+    seedUISettingsDocument();
+
+    expect(document.documentElement.dataset.theme).toBe("obsidian");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("100");
+  });
+
   it("scales technical text without rescaling every code block", () => {
     render(
       <UISettingsProvider>
