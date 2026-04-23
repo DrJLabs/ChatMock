@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -45,25 +46,25 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
     applySettingsToDocument(draftSettings);
   }, [draftSettings]);
 
-  const setDraftThemeId = (themeId: ThemeId) => {
+  const setDraftThemeId = useCallback((themeId: ThemeId) => {
     setDraftSettings((current) => normalizeUISettings({ ...current, themeId }));
-  };
+  }, []);
 
-  const setDraftCodeScale = (codeScale: number) => {
+  const setDraftCodeScale = useCallback((codeScale: number) => {
     setDraftSettings((current) => normalizeUISettings({ ...current, codeScale }));
-  };
+  }, []);
 
-  const applyUISettingsDraft = () => {
+  const applyUISettingsDraft = useCallback(() => {
     const next = normalizeUISettings(draftSettings);
 
     setAppliedSettings(next);
     setDraftSettings(next);
     saveAppliedUISettings(next);
-  };
+  }, [draftSettings]);
 
-  const resetUISettingsDraft = () => {
+  const resetUISettingsDraft = useCallback(() => {
     setDraftSettings(appliedSettings);
-  };
+  }, [appliedSettings]);
 
   const value = useMemo<UISettingsContextValue>(
     () => ({
@@ -77,7 +78,7 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
       applyUISettingsDraft,
       resetUISettingsDraft,
     }),
-    [appliedSettings, draftSettings],
+    [appliedSettings, draftSettings, setDraftThemeId, setDraftCodeScale, applyUISettingsDraft, resetUISettingsDraft],
   );
 
   return <UISettingsContext.Provider value={value}>{children}</UISettingsContext.Provider>;
