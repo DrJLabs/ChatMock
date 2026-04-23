@@ -2,6 +2,7 @@ export const adminQueryKeys = {
   root: ["admin"] as const,
   profiles: ["admin", "profiles"] as const,
   instances: ["admin", "instances"] as const,
+  currentPreviewsRoot: ["admin", "instances", "previews"] as const,
   currentPreviews: (instanceIds: string[]) =>
     ["admin", "instances", "previews", ...instanceIds] as const,
   draft: ["admin", "draft"] as const,

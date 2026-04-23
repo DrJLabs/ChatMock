@@ -221,7 +221,7 @@ class AdminDraftService:
             filename = f'{item["id"]}.yaml'
             temp_path = temp_root / filename
             temp_path.write_text(
-                yaml.safe_dump(payload, sort_keys=False, allow_unicode=False),
+                yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
                 encoding="utf-8",
             )
         return temp_root

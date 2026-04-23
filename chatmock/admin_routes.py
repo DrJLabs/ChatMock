@@ -74,6 +74,27 @@ def _resolve_prompt_file_path(raw_path: str) -> Path:
     return resolved
 
 
+def _normalize_prompt_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+
+    def _normalize_config_path(raw_path: str) -> str:
+        candidate = Path(raw_path).expanduser()
+        if candidate.is_absolute():
+            return str(candidate.resolve())
+        return str(_resolve_prompt_file_path(raw_path))
+
+    prompt_dir = normalized.get("prompt_dir")
+    if isinstance(prompt_dir, str) and prompt_dir.strip():
+        normalized["prompt_dir"] = _normalize_config_path(prompt_dir)
+
+    for key in ("base_prompt_path", "codex_prompt_path"):
+        raw_value = normalized.get(key)
+        if isinstance(raw_value, str) and raw_value.strip():
+            normalized[key] = _normalize_config_path(raw_value)
+
+    return normalized
+
+
 def _build_prompt_file_payload(base_prompt_path: str, codex_prompt_path: str, *, reloaded_current_prompt_set: bool) -> dict[str, Any]:
     base_path = _resolve_prompt_file_path(base_prompt_path)
     codex_path = _resolve_prompt_file_path(codex_prompt_path)
@@ -84,6 +105,19 @@ def _build_prompt_file_payload(base_prompt_path: str, codex_prompt_path: str, *,
         "codex_prompt_text": _read_prompt_text(codex_path),
         "reloaded_current_prompt_set": reloaded_current_prompt_set,
     }
+
+
+def _normalized_current_prompt_paths() -> tuple[Path | None, Path | None]:
+    prompt_manager = current_app.config["PROMPT_MANAGER"]
+    current_state = prompt_manager.get_state()
+
+    def _normalize(raw_path: str) -> Path | None:
+        try:
+            return _resolve_prompt_file_path(raw_path)
+        except ValueError:
+            return None
+
+    return _normalize(current_state.base_prompt_path), _normalize(current_state.codex_prompt_path)
 
 
 def _read_json_body() -> dict[str, Any]:
@@ -157,7 +191,7 @@ def admin_prompts_config():
         return denied
     prompt_manager = current_app.config["PROMPT_MANAGER"]
     try:
-        payload = _read_json_body()
+        payload = _normalize_prompt_config_payload(_read_json_body())
         prompt_manager.update_config(payload)
     except (FileNotFoundError, ValueError, OSError, PermissionError) as exc:
         return jsonify({"error": {"message": str(exc)}}), 400
@@ -197,18 +231,23 @@ def admin_prompt_files_write():
         codex_prompt_text = payload["codex_prompt_text"]
         base_path = _resolve_prompt_file_path(base_prompt_path)
         codex_path = _resolve_prompt_file_path(codex_prompt_path)
-        write_prompt_texts_atomically(
-            [
-                (base_path, base_prompt_text),
-                (codex_path, codex_prompt_text),
-            ]
-        )
+        if base_path == codex_path:
+            if base_prompt_text != codex_prompt_text:
+                raise ValueError("Base and Codex prompt paths resolve to the same file; submitted texts must match")
+            write_prompt_texts_atomically([(base_path, base_prompt_text)])
+        else:
+            write_prompt_texts_atomically(
+                [
+                    (base_path, base_prompt_text),
+                    (codex_path, codex_prompt_text),
+                ]
+            )
 
         prompt_manager = current_app.config["PROMPT_MANAGER"]
-        current_state = prompt_manager.get_state()
+        current_base_path, current_codex_path = _normalized_current_prompt_paths()
         should_reload = (
-            current_state.base_prompt_path == str(base_path)
-            or current_state.codex_prompt_path == str(codex_path)
+            current_base_path == base_path
+            or current_codex_path == codex_path
         )
         if should_reload:
             prompt_manager.reload()

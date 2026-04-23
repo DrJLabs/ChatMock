@@ -9,6 +9,7 @@ async function invalidateCurrentState(queryClient: ReturnType<typeof useQueryCli
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: adminQueryKeys.profiles }),
     queryClient.invalidateQueries({ queryKey: adminQueryKeys.instances }),
+    queryClient.invalidateQueries({ queryKey: adminQueryKeys.currentPreviewsRoot }),
     queryClient.invalidateQueries({ queryKey: adminQueryKeys.runtimeValidation }),
     queryClient.invalidateQueries({ queryKey: adminQueryKeys.prompts }),
   ]);

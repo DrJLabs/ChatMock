@@ -327,6 +327,63 @@ def test_prompt_file_write_updates_disk_and_reloads_current_prompt_set(tmp_path:
     assert current_prompt_state["codex_prompt_text"] == "bare codex updated"
 
 
+def test_prompt_file_write_reloads_when_current_prompt_paths_are_relative(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    update = client.post(
+        "/admin/prompts/config",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt_gpt5_codex.md",
+        },
+    )
+    assert update.status_code == 200
+
+    response = client.post(
+        "/admin/prompts/files/write",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt_gpt5_codex.md",
+            "base_prompt_text": "bare base relative updated",
+            "codex_prompt_text": "bare codex relative updated",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["reloaded_current_prompt_set"] is True
+    current_prompt_state = client.get("/admin/prompts").get_json()
+    assert current_prompt_state["base_prompt_text"] == "bare base relative updated"
+    assert current_prompt_state["codex_prompt_text"] == "bare codex relative updated"
+
+
+def test_prompt_file_write_rejects_same_file_with_different_text(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    update = client.post(
+        "/admin/prompts/config",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt.md",
+        },
+    )
+    assert update.status_code == 200
+
+    response = client.post(
+        "/admin/prompts/files/write",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt.md",
+            "base_prompt_text": "base text",
+            "codex_prompt_text": "codex text",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "submitted texts must match" in response.get_json()["error"]["message"]
+
+
 def test_atomic_prompt_file_write_rolls_back_on_failure(tmp_path: Path):
     base_path = tmp_path / "prompt.md"
     codex_path = tmp_path / "prompt_gpt5_codex.md"

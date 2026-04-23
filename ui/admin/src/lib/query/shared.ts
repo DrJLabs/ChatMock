@@ -27,6 +27,22 @@ export function buildInstancePayload(instance: Instance): Instance {
 
 export function toErrorMessage(error: unknown): string {
   if (typeof error === "string") {
+    try {
+      const parsed = JSON.parse(error);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "error" in parsed &&
+        typeof parsed.error === "object" &&
+        parsed.error !== null &&
+        "message" in parsed.error &&
+        typeof parsed.error.message === "string"
+      ) {
+        return parsed.error.message;
+      }
+    } catch {
+      // Keep the original string when it is not JSON.
+    }
     return error;
   }
 

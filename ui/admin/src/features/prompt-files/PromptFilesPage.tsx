@@ -51,14 +51,21 @@ export function PromptFilesPage({
       return;
     }
     let active = true;
-    void onLoadPromptFiles({
-      base_prompt_path: selectedProfile.base_prompt_path,
-      codex_prompt_path: selectedProfile.codex_prompt_path,
-    }).then((payload) => {
-      if (active) {
-        setPromptFiles(payload);
+    void (async () => {
+      try {
+        const payload = await onLoadPromptFiles({
+          base_prompt_path: selectedProfile.base_prompt_path,
+          codex_prompt_path: selectedProfile.codex_prompt_path,
+        });
+        if (active) {
+          setPromptFiles(payload);
+        }
+      } catch {
+        if (active) {
+          setPromptFiles(null);
+        }
       }
-    });
+    })();
     return () => {
       active = false;
     };
@@ -107,11 +114,15 @@ export function PromptFilesPage({
             disabled={busy}
             variant="outline"
             onClick={async () => {
-              const payload = await onLoadPromptFiles({
-                base_prompt_path: selectedProfile.base_prompt_path,
-                codex_prompt_path: selectedProfile.codex_prompt_path,
-              });
-              setPromptFiles(payload);
+              try {
+                const payload = await onLoadPromptFiles({
+                  base_prompt_path: selectedProfile.base_prompt_path,
+                  codex_prompt_path: selectedProfile.codex_prompt_path,
+                });
+                setPromptFiles(payload);
+              } catch {
+                // App-level error state already reports the failure.
+              }
             }}
           >
             Reload From Disk
@@ -122,8 +133,12 @@ export function PromptFilesPage({
               if (!promptFiles) {
                 return;
               }
-              const payload = await onSavePromptFiles(promptFiles);
-              setPromptFiles(payload);
+              try {
+                const payload = await onSavePromptFiles(promptFiles);
+                setPromptFiles(payload);
+              } catch {
+                // App-level error state already reports the failure.
+              }
             }}
           >
             Save Prompt Files
