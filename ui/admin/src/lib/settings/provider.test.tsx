@@ -107,6 +107,8 @@ describe("UISettingsProvider", () => {
     expect(screen.getByTestId("draft-scale")).toHaveTextContent("120");
     expect(document.documentElement.dataset.theme).toBe("midnight");
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+    expect(window.getComputedStyle(document.documentElement).getPropertyValue("--card-foreground").trim()).not.toBe("");
+    expect(window.getComputedStyle(document.documentElement).getPropertyValue("--sidebar-border").trim()).not.toBe("");
     expect(window.localStorage.getItem("chatmock.admin.ui-settings")).toContain("\"codeScale\":120");
   });
 
