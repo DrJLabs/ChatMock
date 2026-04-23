@@ -82,11 +82,25 @@ curl -sS -X POST http://127.0.0.1:8000/admin/prompts/reload \
 
 ## Instance registry inspection
 
-Registry-backed read/preview controls are also exposed locally:
+Registry-backed management now exposes both current-state and draft/apply controls locally:
 
 - `GET /admin/profiles`
 - `GET /admin/instances`
 - `GET /admin/instances/<instance_id>/preview`
+- `GET /admin/draft`
+- `POST /admin/draft/reset`
+- `POST /admin/draft/validate`
+- `POST /admin/draft/preview`
+- `POST /admin/draft/apply`
+- `POST /admin/profiles`
+- `PUT /admin/profiles/<profile_id>`
+- `DELETE /admin/profiles/<profile_id>`
+- `POST /admin/instances`
+- `PUT /admin/instances/<instance_id>`
+- `DELETE /admin/instances/<instance_id>`
+- `POST /admin/runtime/validate`
+- `POST /admin/runtime/prompts/reload`
+- `POST /admin/runtime/redeploy`
 
 CLI equivalents:
 
@@ -96,7 +110,68 @@ chatmock instances validate
 chatmock instances preview chatmock
 ```
 
-These controls are intended to give the current GUI or a future replacement UI a stable backend contract before any lifecycle/provisioning work is added.
+These controls now back the in-repo browser admin UI and keep the split between:
+
+- immediate runtime actions
+- draft/apply structural edits
+
+## Browser Admin UI
+
+The primary operator UI now lives in-repo under:
+
+- `ui/admin/`
+
+Default local test port for both backend and browser-admin changes:
+
+- `18000`
+
+Use that as the default verification target when you want an isolated test server without touching the live service on `8000`.
+
+Development loop:
+
+```bash
+chatmock serve --port 18000
+
+cd ui/admin
+npm install
+npm run dev
+```
+
+The Vite dev server currently proxies `/admin/*` requests to the Flask backend on `http://127.0.0.1:8000`, so for branch testing the simpler default is to use the Flask-served built UI on `18000`:
+
+```bash
+cd ui/admin
+npm run build
+
+curl -I http://127.0.0.1:18000/admin/ui
+curl -fsS http://127.0.0.1:18000/admin/draft | jq .
+```
+
+Production build:
+
+```bash
+cd ui/admin
+npm run build
+```
+
+That emits static assets to:
+
+- `ui/admin/dist/`
+
+Flask serves the built SPA at:
+
+- `GET /admin/ui`
+- `GET /admin/ui/<path>`
+
+The SPA inherits the same local-only trust model as the JSON admin endpoints. That means tailnet exposure should happen through the existing local hosting model plus Tailscale Serve or an equivalent tailnet-only path, not through a second login/session layer.
+
+The browser UI is intentionally single-user. Structural edits happen in one in-memory draft owned by the Flask process:
+
+- profile and instance edits change only the draft
+- `POST /admin/draft/validate` checks the draft without writing YAML
+- `POST /admin/draft/preview` renders instance/runtime previews from the draft
+- `POST /admin/draft/apply` writes the YAML-backed config and refreshes the live current-state snapshot
+- runtime actions such as prompt reload and redeploy stay separate from Apply
 
 ## Isolated test stack
 

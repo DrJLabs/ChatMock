@@ -96,6 +96,26 @@ class ProfileRegistryTests(unittest.TestCase):
 
             self.assertEqual([profile["id"] for profile in profiles], ["bare"])
 
+    def test_load_profiles_preserves_nested_prompt_subpaths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = root / "prompts" / "bare" / "nested"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            (prompt_dir / "prompt.md").write_text("bare base", encoding="utf-8")
+            (prompt_dir / "prompt_gpt5_codex.md").write_text("bare codex", encoding="utf-8")
+            config_root = root / "config" / "profiles"
+            config_root.mkdir(parents=True, exist_ok=True)
+            nested_yaml = BARE_PROFILE_YAML.replace("prompt.md", "nested/prompt.md").replace(
+                "prompt_gpt5_codex.md",
+                "nested/prompt_gpt5_codex.md",
+            )
+            (config_root / "bare.yaml").write_text(nested_yaml, encoding="utf-8")
+
+            profiles = load_profiles(config_root, repo_root=root)
+
+            self.assertEqual(profiles[0]["base_prompt_path"], "prompts/bare/nested/prompt.md")
+            self.assertEqual(profiles[0]["codex_prompt_path"], "prompts/bare/nested/prompt_gpt5_codex.md")
+
     def test_load_profiles_raises_when_config_directory_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

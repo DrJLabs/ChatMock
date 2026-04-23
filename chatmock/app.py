@@ -3,11 +3,13 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import os
+from pathlib import Path
 
 from flask import Flask, jsonify, request
 from flask_sock import Sock
-from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
+from .admin_draft_service import AdminDraftService
+from .admin_routes import admin_bp
 from .config import get_prompt_manager
 from .http import build_cors_headers
 from .instance_service import build_instance_service
@@ -30,8 +32,14 @@ def create_app(
     prompt_dir: str | None = None,
     prompt_config_path: str | None = None,
     admin_token: str | None = None,
+    admin_ui_dist_dir: str | None = None,
+    repo_root: str | None = None,
+    profiles_root: str | None = None,
+    instances_root: str | None = None,
+    runtime_redeploy_callback=None,
 ) -> Flask:
     app = Flask(__name__)
+    repo_root_path = Path(repo_root) if isinstance(repo_root, str) and repo_root else None
     prompt_manager = get_prompt_manager(
         prompt_dir=prompt_dir,
         prompt_config_path=prompt_config_path,
@@ -51,6 +59,12 @@ def create_app(
         INJECT_DEFAULT_INSTRUCTIONS=bool(inject_default_instructions),
         PROMPT_MANAGER=prompt_manager,
         INSTANCE_SERVICE=None,
+        DRAFT_SERVICE=None,
+        ADMIN_UI_DIST_DIR=admin_ui_dist_dir,
+        REPO_ROOT=repo_root_path,
+        PROFILES_ROOT=profiles_root,
+        INSTANCES_ROOT=instances_root,
+        RUNTIME_REDEPLOY_CALLBACK=runtime_redeploy_callback,
         ADMIN_TOKEN=(
             admin_token
             if isinstance(admin_token, str) and admin_token
@@ -112,84 +126,34 @@ def create_app(
     def _get_instance_service():
         service = app.config.get("INSTANCE_SERVICE")
         if service is None:
-            service = build_instance_service()
+            service = build_instance_service(
+                repo_root=repo_root_path,
+                profiles_root=profiles_root,
+                instances_root=instances_root,
+            )
             app.config["INSTANCE_SERVICE"] = service
+        return service
+
+    def _get_draft_service():
+        service = app.config.get("DRAFT_SERVICE")
+        if service is None:
+            service = AdminDraftService(
+                repo_root=repo_root_path or Path(__file__).resolve().parent.parent,
+                profiles_root=profiles_root,
+                instances_root=instances_root,
+            )
+            app.config["DRAFT_SERVICE"] = service
         return service
 
     def _registry_error(exc: Exception):
         return jsonify({"error": {"message": str(exc)}}), 400
 
-    @app.get("/admin/prompts")
-    def admin_prompts_state():
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        return jsonify(prompt_manager.as_dict())
-
-    @app.post("/admin/prompts/reload")
-    def admin_prompts_reload():
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        try:
-            prompt_manager.reload()
-        except (FileNotFoundError, ValueError, OSError, PermissionError) as exc:
-            return jsonify({"error": {"message": str(exc)}}), 400
-        return jsonify(prompt_manager.as_dict())
-
-    @app.post("/admin/prompts/config")
-    def admin_prompts_config():
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        try:
-            payload = request.get_json(silent=False)
-        except (BadRequest, UnsupportedMediaType):
-            return jsonify({"error": {"message": "Invalid JSON body"}}), 400
-        if not isinstance(payload, dict):
-            return jsonify({"error": {"message": "Invalid JSON body"}}), 400
-        try:
-            prompt_manager.update_config(payload)
-        except (FileNotFoundError, ValueError, OSError, PermissionError) as exc:
-            return jsonify({"error": {"message": str(exc)}}), 400
-        return jsonify(prompt_manager.as_dict())
-
-    @app.get("/admin/profiles")
-    def admin_profiles():
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        try:
-            service = _get_instance_service()
-        except (FileNotFoundError, OSError, ValueError) as exc:
-            return _registry_error(exc)
-        return jsonify({"profiles": service.list_profiles()})
-
-    @app.get("/admin/instances")
-    def admin_instances():
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        try:
-            service = _get_instance_service()
-        except (FileNotFoundError, OSError, ValueError) as exc:
-            return _registry_error(exc)
-        return jsonify({"instances": service.list_instances()})
-
-    @app.get("/admin/instances/<instance_id>/preview")
-    def admin_instance_preview(instance_id: str):
-        denied = _require_local_admin()
-        if denied is not None:
-            return denied
-        try:
-            service = _get_instance_service()
-        except (FileNotFoundError, OSError, ValueError) as exc:
-            return _registry_error(exc)
-        try:
-            preview = service.render_instance_preview(instance_id)
-        except ValueError as exc:
-            return jsonify({"error": {"message": str(exc)}}), 404
-        return jsonify(preview)
+    app.config.update(
+        REQUIRE_LOCAL_ADMIN=_require_local_admin,
+        GET_INSTANCE_SERVICE=_get_instance_service,
+        GET_DRAFT_SERVICE=_get_draft_service,
+        REGISTRY_ERROR_HANDLER=_registry_error,
+    )
 
     @app.after_request
     def _cors(resp):
@@ -197,6 +161,7 @@ def create_app(
             resp.headers.setdefault(k, v)
         return resp
 
+    app.register_blueprint(admin_bp)
     app.register_blueprint(openai_bp)
     app.register_blueprint(ollama_bp)
     sock = Sock(app)

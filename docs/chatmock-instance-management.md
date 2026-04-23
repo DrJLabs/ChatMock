@@ -4,13 +4,12 @@
 
 ChatMock now has a registry-backed management layer for prompt profiles and managed instances.
 
-This layer is intentionally limited to:
+This layer now supports two distinct control lanes:
 
-- inspect
-- validate
-- preview
+- current-state inspection and immediate runtime actions
+- in-memory draft/apply structural edits for YAML-backed config
 
-It does **not** replace the live prompt manager or the live Docker Compose entrypoint in this phase.
+It still does **not** replace the live prompt manager or the live Docker Compose entrypoint.
 
 ## Source Of Truth
 
@@ -98,14 +97,31 @@ The existing local-only admin guard also protects the registry-backed read/previ
 - `GET /admin/instances`
 - `GET /admin/instances/<instance_id>/preview`
 
+Draft and runtime mutation endpoints are also available:
+
+- `GET /admin/draft`
+- `POST /admin/draft/reset`
+- `POST /admin/draft/validate`
+- `POST /admin/draft/preview`
+- `POST /admin/draft/apply`
+- `POST /admin/profiles`
+- `PUT /admin/profiles/<profile_id>`
+- `DELETE /admin/profiles/<profile_id>`
+- `POST /admin/instances`
+- `PUT /admin/instances/<instance_id>`
+- `DELETE /admin/instances/<instance_id>`
+- `POST /admin/runtime/validate`
+- `POST /admin/runtime/prompts/reload`
+- `POST /admin/runtime/redeploy`
+
 These endpoints are intended to be reusable by:
 
 - CLI
 - local scripts
-- the current PySide GUI
-- a future replacement GUI
+- the browser admin SPA
+- any later automation that needs a stable JSON contract
 
-The payloads are JSON-first so UI work does not need to re-derive backend state from terminal output.
+The payloads are JSON-first so the UI does not need to re-derive backend state from terminal output.
 
 ## Runtime Relationship
 
@@ -117,8 +133,28 @@ Responsibilities are split like this:
 - `PromptManager` owns live prompt selection and cached prompt contents
 - `docker-compose.yml` remains the live runtime entrypoint in this phase
 
-## Next Phase
+## Browser Admin UI
 
-The next decision point is whether the current `gui.py` should be adapted to consume the new management layer or whether a replacement GUI should be built.
+The primary operator surface now lives at:
 
-Because the service and admin responses are now JSON-first, either path can reuse the same management contract without redesigning the backend again.
+- `GET /admin/ui`
+
+The SPA source lives under:
+
+- `ui/admin/`
+
+It uses:
+
+- separate Vite dev mode during implementation
+- Flask-served built assets in production
+- the same local-only trust model as the admin API
+- a single in-memory draft workspace for structural edits
+
+Draft/apply semantics:
+
+- structural profile and instance edits change only the draft
+- validation and preview operate on the draft without writing YAML
+- Apply writes the YAML-backed config and clears the dirty draft state
+- redeploy remains a separate explicit runtime action
+
+This keeps destructive or operational actions explicit instead of hiding them behind config writes.

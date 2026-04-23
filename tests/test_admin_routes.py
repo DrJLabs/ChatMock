@@ -1,0 +1,449 @@
+from __future__ import annotations
+from pathlib import Path
+from unittest.mock import patch
+
+from chatmock.app import create_app
+from chatmock.config import write_prompt_texts_atomically
+
+
+def _write_admin_index(dist_dir: Path, body: str = "<h1>ChatMock Admin</h1>") -> None:
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    (dist_dir / "index.html").write_text(body, encoding="utf-8")
+
+
+BARE_PROFILE_YAML = """\
+id: bare
+label: Bare
+description: Default low-opinion prompt set for the main ChatMock service
+prompt_dir: prompts/bare
+base_prompt_file: prompt.md
+codex_prompt_file: prompt_gpt5_codex.md
+runtime_defaults:
+  inject_default_instructions: true
+ui:
+  order: 10
+  editable: true
+"""
+
+
+CLAWMEM_PROFILE_YAML = """\
+id: clawmem
+label: ClawMem
+description: ClawMem-specific prompt set for the secondary managed service
+prompt_dir: prompts/clawmem
+base_prompt_file: prompt.md
+codex_prompt_file: prompt_gpt5_codex.md
+runtime_defaults:
+  inject_default_instructions: true
+ui:
+  order: 20
+  editable: true
+"""
+
+
+CHATMOCK_INSTANCE_YAML = """\
+id: chatmock
+label: ChatMock
+profile_id: bare
+bind_host: 127.0.0.1
+port: 8000
+runtime: docker_compose
+prompt_config_path: /data/prompt-config-chatmock.json
+state_group: shared-auth-default
+compose_service_name: chatmock
+container_name: chatmock
+env_prefix: CHATMOCK
+env_overrides: {}
+healthcheck:
+  path: /health
+ui:
+  order: 10
+  mutable_fields:
+    - profile_id
+    - port
+enabled: true
+"""
+
+
+CHATMOCK_CLAWMEM_INSTANCE_YAML = """\
+id: chatmock-clawmem
+label: ChatMock ClawMem
+profile_id: clawmem
+bind_host: 127.0.0.1
+port: 8001
+runtime: docker_compose
+prompt_config_path: /data/prompt-config-chatmock-clawmem.json
+state_group: shared-auth-default
+compose_service_name: chatmock-clawmem
+container_name: chatmock-clawmem
+env_prefix: CHATMOCK_CLAWMEM
+env_overrides: {}
+healthcheck:
+  path: /health
+ui:
+  order: 20
+  mutable_fields:
+    - profile_id
+    - port
+enabled: true
+"""
+
+
+def _write_prompt_set(root: Path, profile: str) -> None:
+    prompt_dir = root / "prompts" / profile
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_dir / "prompt.md").write_text(f"{profile} base", encoding="utf-8")
+    (prompt_dir / "prompt_gpt5_codex.md").write_text(f"{profile} codex", encoding="utf-8")
+
+
+def _write_registry(root: Path) -> None:
+    _write_prompt_set(root, "bare")
+    _write_prompt_set(root, "clawmem")
+    profiles_root = root / "config" / "profiles"
+    instances_root = root / "config" / "instances"
+    profiles_root.mkdir(parents=True, exist_ok=True)
+    instances_root.mkdir(parents=True, exist_ok=True)
+    (profiles_root / "bare.yaml").write_text(BARE_PROFILE_YAML, encoding="utf-8")
+    (profiles_root / "clawmem.yaml").write_text(CLAWMEM_PROFILE_YAML, encoding="utf-8")
+    (instances_root / "chatmock.yaml").write_text(CHATMOCK_INSTANCE_YAML, encoding="utf-8")
+    (instances_root / "chatmock-clawmem.yaml").write_text(CHATMOCK_CLAWMEM_INSTANCE_YAML, encoding="utf-8")
+
+
+def _build_admin_app(root: Path, *, runtime_redeploy_callback=None):
+    _write_registry(root)
+    dist_dir = root / "dist"
+    _write_admin_index(dist_dir)
+    prompt_dir = root / "prompts" / "bare"
+    return create_app(
+        admin_ui_dist_dir=str(dist_dir),
+        prompt_dir=str(prompt_dir),
+        prompt_config_path=str(root / "prompt-config-chatmock.json"),
+        repo_root=str(root),
+        runtime_redeploy_callback=runtime_redeploy_callback,
+    )
+
+
+def test_admin_ui_index_serves_built_assets(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir)
+    app = create_app(admin_ui_dist_dir=str(dist_dir))
+    client = app.test_client()
+
+    response = client.get("/admin/ui")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"ChatMock Admin" in response.data
+
+
+def test_admin_ui_unknown_path_falls_back_to_index(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Instances</h1>")
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    (assets_dir / "app.js").write_text("console.log('admin');", encoding="utf-8")
+    app = create_app(admin_ui_dist_dir=str(dist_dir))
+    client = app.test_client()
+
+    response = client.get("/admin/ui/instances")
+    asset_response = client.get("/admin/ui/assets/app.js")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Instances" in response.data
+    assert asset_response.status_code == 200
+    assert asset_response.mimetype == "text/javascript"
+    assert b"console.log('admin');" in asset_response.data
+
+
+def test_admin_ui_path_traversal_falls_back_to_index(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Safe Index</h1>")
+    secret_path = tmp_path / "secret.txt"
+    secret_path.write_text("top secret", encoding="utf-8")
+    app = create_app(admin_ui_dist_dir=str(dist_dir))
+    client = app.test_client()
+
+    response = client.get("/admin/ui/../secret.txt")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Safe Index" in response.data
+    assert b"top secret" not in response.data
+
+
+def test_admin_ui_trailing_slash_serves_index(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Trailing Slash</h1>")
+    app = create_app(admin_ui_dist_dir=str(dist_dir))
+    client = app.test_client()
+
+    response = client.get("/admin/ui/")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Trailing Slash" in response.data
+
+
+def test_get_draft_returns_current_state(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.get("/admin/draft")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert [profile["id"] for profile in body["profiles"]] == ["bare", "clawmem"]
+    assert [instance["id"] for instance in body["instances"]] == ["chatmock", "chatmock-clawmem"]
+    assert body["dirty"] is False
+
+
+def test_put_profile_updates_draft_only(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.put("/admin/profiles/bare", json={"label": "Bare Updated"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert next(profile for profile in body["profiles"] if profile["id"] == "bare")["label"] == "Bare Updated"
+    current = client.get("/admin/profiles").get_json()
+    assert next(profile for profile in current["profiles"] if profile["id"] == "bare")["label"] == "Bare"
+
+
+def test_put_instance_updates_draft_only(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.put("/admin/instances/chatmock", json={"port": 8010})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert next(instance for instance in body["instances"] if instance["id"] == "chatmock")["port"] == 8010
+    current = client.get("/admin/instances").get_json()
+    assert next(instance for instance in current["instances"] if instance["id"] == "chatmock")["port"] == 8000
+
+
+def test_post_draft_validate_returns_validation_summary(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post("/admin/draft/validate")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "errors": [],
+        "profiles": ["bare", "clawmem"],
+        "instances": ["chatmock", "chatmock-clawmem"],
+    }
+
+
+def test_post_draft_preview_returns_preview_payload(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post("/admin/draft/preview")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["compose_preview"]["services"]["chatmock"]["bind"] == "127.0.0.1:8000:8000"
+    assert len(body["instance_previews"]) == 2
+
+
+def test_post_draft_apply_persists_yaml(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+    client.put("/admin/profiles/bare", json={"label": "Bare Updated"})
+    client.put("/admin/instances/chatmock", json={"port": 8010})
+
+    response = client.post("/admin/draft/apply")
+
+    assert response.status_code == 200
+    current_profiles = client.get("/admin/profiles").get_json()
+    current_instances = client.get("/admin/instances").get_json()
+    assert next(profile for profile in current_profiles["profiles"] if profile["id"] == "bare")["label"] == "Bare Updated"
+    assert next(instance for instance in current_instances["instances"] if instance["id"] == "chatmock")["port"] == 8010
+
+
+def test_post_runtime_validate_returns_current_registry_summary(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post("/admin/runtime/validate")
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+
+def test_post_runtime_redeploy_invokes_callback(tmp_path: Path):
+    called: list[dict[str, object]] = []
+
+    def _callback():
+        called.append({"ok": True})
+        return {"ok": True, "status": "redeployed"}
+
+    app = _build_admin_app(tmp_path, runtime_redeploy_callback=_callback)
+    client = app.test_client()
+
+    response = client.post("/admin/runtime/redeploy")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "status": "redeployed"}
+    assert called == [{"ok": True}]
+
+
+def test_prompt_file_read_returns_selected_profile_contents(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post(
+        "/admin/prompts/files/read",
+        json={
+            "base_prompt_path": "prompts/clawmem/prompt.md",
+            "codex_prompt_path": "prompts/clawmem/prompt_gpt5_codex.md",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "base_prompt_path": "prompts/clawmem/prompt.md",
+        "codex_prompt_path": "prompts/clawmem/prompt_gpt5_codex.md",
+        "base_prompt_text": "clawmem base",
+        "codex_prompt_text": "clawmem codex",
+        "reloaded_current_prompt_set": False,
+    }
+
+
+def test_prompt_file_write_updates_disk_and_reloads_current_prompt_set(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post(
+        "/admin/prompts/files/write",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt_gpt5_codex.md",
+            "base_prompt_text": "bare base updated",
+            "codex_prompt_text": "bare codex updated",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["base_prompt_text"] == "bare base updated"
+    assert body["codex_prompt_text"] == "bare codex updated"
+    assert body["reloaded_current_prompt_set"] is True
+    assert (tmp_path / "prompts" / "bare" / "prompt.md").read_text(encoding="utf-8") == "bare base updated"
+    assert (tmp_path / "prompts" / "bare" / "prompt_gpt5_codex.md").read_text(encoding="utf-8") == "bare codex updated"
+
+    current_prompt_state = client.get("/admin/prompts").get_json()
+    assert current_prompt_state["base_prompt_text"] == "bare base updated"
+    assert current_prompt_state["codex_prompt_text"] == "bare codex updated"
+
+
+def test_prompt_file_write_reloads_when_current_prompt_paths_are_relative(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    update = client.post(
+        "/admin/prompts/config",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt_gpt5_codex.md",
+        },
+    )
+    assert update.status_code == 200
+
+    response = client.post(
+        "/admin/prompts/files/write",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt_gpt5_codex.md",
+            "base_prompt_text": "bare base relative updated",
+            "codex_prompt_text": "bare codex relative updated",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["reloaded_current_prompt_set"] is True
+    current_prompt_state = client.get("/admin/prompts").get_json()
+    assert current_prompt_state["base_prompt_text"] == "bare base relative updated"
+    assert current_prompt_state["codex_prompt_text"] == "bare codex relative updated"
+
+
+def test_prompt_file_write_rejects_same_file_with_different_text(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+
+    update = client.post(
+        "/admin/prompts/config",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt.md",
+        },
+    )
+    assert update.status_code == 200
+
+    response = client.post(
+        "/admin/prompts/files/write",
+        json={
+            "base_prompt_path": "prompts/bare/prompt.md",
+            "codex_prompt_path": "prompts/bare/prompt.md",
+            "base_prompt_text": "base text",
+            "codex_prompt_text": "codex text",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "submitted texts must match" in response.get_json()["error"]["message"]
+
+
+def test_prompt_config_rejects_paths_outside_repo_root(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+    outside_prompt_dir = tmp_path.parent / "outside-prompts"
+    outside_prompt_dir.mkdir(parents=True, exist_ok=True)
+
+    response = client.post(
+        "/admin/prompts/config",
+        json={"prompt_dir": str(outside_prompt_dir)},
+    )
+
+    assert response.status_code == 400
+    assert "must stay within repo root" in response.get_json()["error"]["message"]
+
+
+def test_atomic_prompt_file_write_rolls_back_on_failure(tmp_path: Path):
+    base_path = tmp_path / "prompt.md"
+    codex_path = tmp_path / "prompt_gpt5_codex.md"
+    base_path.write_text("base original", encoding="utf-8")
+    codex_path.write_text("codex original", encoding="utf-8")
+
+    from chatmock import config as config_module
+
+    original_replace = config_module.os.replace
+    call_count = {"value": 0}
+
+    def flaky_replace(src, dst):
+        call_count["value"] += 1
+        if call_count["value"] == 2:
+            raise OSError("simulated replace failure")
+        return original_replace(src, dst)
+
+    with patch.object(config_module.os, "replace", flaky_replace):
+        try:
+            write_prompt_texts_atomically(
+                [
+                    (base_path, "base updated"),
+                    (codex_path, "codex updated"),
+                ]
+            )
+        except OSError as exc:
+            assert "simulated replace failure" in str(exc)
+        else:
+            raise AssertionError("Expected write_prompt_texts_atomically() to fail")
+
+    assert base_path.read_text(encoding="utf-8") == "base original"
+    assert codex_path.read_text(encoding="utf-8") == "codex original"

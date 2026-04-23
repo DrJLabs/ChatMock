@@ -51,6 +51,8 @@ chatmock serve
 
 The server runs at `http://127.0.0.1:8000` by default. Use `http://127.0.0.1:8000/v1` as your base URL for OpenAI-compatible apps.
 
+For local testing of branch changes, use `18000` as the default test port so you do not disturb the main service on `8000`. That applies to both backend work and browser-admin UI verification.
+
 <br>
 
 ## Usage

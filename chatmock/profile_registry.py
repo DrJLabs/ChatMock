@@ -116,6 +116,63 @@ def _normalize_profile(data: dict[str, Any], *, repo_root: Path) -> dict[str, An
     }
 
 
+def _coerce_profile_data(data: dict[str, Any]) -> dict[str, Any]:
+    if "base_prompt_file" in data and "codex_prompt_file" in data:
+        return data
+
+    normalized = dict(data)
+    base_prompt_path = normalized.get("base_prompt_path")
+    codex_prompt_path = normalized.get("codex_prompt_path")
+    prompt_dir = normalized.get("prompt_dir")
+    prompt_dir_path = Path(prompt_dir) if isinstance(prompt_dir, str) and prompt_dir.strip() else None
+
+    def _relative_prompt_file(path_value: str) -> str:
+        path = Path(path_value)
+        if prompt_dir_path is None:
+            return path.as_posix()
+        try:
+            return path.relative_to(prompt_dir_path).as_posix()
+        except ValueError:
+            return path.name
+
+    if "base_prompt_file" not in normalized and isinstance(base_prompt_path, str) and base_prompt_path.strip():
+        normalized["base_prompt_file"] = _relative_prompt_file(base_prompt_path)
+    if "codex_prompt_file" not in normalized and isinstance(codex_prompt_path, str) and codex_prompt_path.strip():
+        normalized["codex_prompt_file"] = _relative_prompt_file(codex_prompt_path)
+    return normalized
+
+
+def validate_profiles_data(profiles: list[dict[str, Any]], *, repo_root: Path) -> list[dict[str, Any]]:
+    normalized_profiles: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for item in profiles:
+        if not isinstance(item, dict):
+            raise ValueError("Profile draft entries must be mappings")
+        profile = _normalize_profile(_coerce_profile_data(item), repo_root=repo_root)
+        profile_id = profile["id"]
+        if profile_id in seen_ids:
+            raise ValueError(f"Duplicate profile id: {profile_id}")
+        seen_ids.add(profile_id)
+        normalized_profiles.append(profile)
+    return sorted(normalized_profiles, key=lambda item: (item["ui"]["order"], item["id"]))
+
+
+def serialize_profile_config(profile: dict[str, Any]) -> dict[str, Any]:
+    prompt_dir = Path(profile["prompt_dir"])
+
+    data = {
+        "id": profile["id"],
+        "label": profile["label"],
+        "description": profile["description"],
+        "prompt_dir": profile["prompt_dir"],
+        "base_prompt_file": Path(profile["base_prompt_path"]).relative_to(prompt_dir).as_posix(),
+        "codex_prompt_file": Path(profile["codex_prompt_path"]).relative_to(prompt_dir).as_posix(),
+        "runtime_defaults": dict(profile["runtime_defaults"]),
+        "ui": dict(profile["ui"]),
+    }
+    return data
+
+
 def load_profiles(config_root: Path | str | None = None, *, repo_root: Path | str | None = None) -> list[dict[str, Any]]:
     repo_root_path = Path(repo_root) if repo_root is not None else None
     if repo_root_path is None:
@@ -125,13 +182,5 @@ def load_profiles(config_root: Path | str | None = None, *, repo_root: Path | st
     if not config_root_path.exists() or not config_root_path.is_dir():
         raise FileNotFoundError(f"Profile config directory not found: {config_root_path}")
 
-    profiles: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    for path in _iter_yaml_entries(config_root_path):
-        profile = _normalize_profile(_load_yaml_object(path), repo_root=repo_root_path)
-        profile_id = profile["id"]
-        if profile_id in seen_ids:
-            raise ValueError(f"Duplicate profile id: {profile_id}")
-        seen_ids.add(profile_id)
-        profiles.append(profile)
-    return sorted(profiles, key=lambda item: (item["ui"]["order"], item["id"]))
+    raw_profiles = [_load_yaml_object(path) for path in _iter_yaml_entries(config_root_path)]
+    return validate_profiles_data(raw_profiles, repo_root=repo_root_path)
