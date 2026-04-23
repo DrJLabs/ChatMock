@@ -60,10 +60,19 @@ describe("UISettingsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(document.documentElement.dataset.theme).toBe("obsidian");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("100");
+    expect(screen.getByText("Applied settings are active.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Midnight" }));
+    fireEvent.change(screen.getByLabelText("Code and prompt text size"), {
+      target: { value: "120" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    expect(window.localStorage.getItem("chatmock.admin.ui-settings")).toContain("midnight");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+    expect(JSON.parse(window.localStorage.getItem("chatmock.admin.ui-settings") ?? "{}")).toEqual({
+      themeId: "midnight",
+      codeScale: 120,
+    });
   });
 });
