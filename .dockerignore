@@ -1,0 +1,5 @@
+ui/admin/node_modules
+ui/admin/dist
+.venv
+.pytest_cache
+__pycache__

@@ -185,6 +185,21 @@ def test_admin_ui_trailing_slash_serves_index(tmp_path: Path):
     assert b"Trailing Slash" in response.data
 
 
+@patch.dict("os.environ", {}, clear=False)
+def test_admin_ui_uses_env_configured_dist_dir(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Env Configured</h1>")
+    with patch.dict("os.environ", {"CHATMOCK_ADMIN_UI_DIST_DIR": str(dist_dir)}):
+        app = create_app()
+    client = app.test_client()
+
+    response = client.get("/admin/ui")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Env Configured" in response.data
+
+
 def test_get_draft_returns_current_state(tmp_path: Path):
     app = _build_admin_app(tmp_path)
     client = app.test_client()
