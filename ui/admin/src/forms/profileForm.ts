@@ -13,7 +13,8 @@ export type ProfileFormValues = {
 };
 
 export function buildNewProfileFormValues(profiles: Profile[]): ProfileFormValues {
-  const nextOrder = (profiles[profiles.length - 1]?.ui.order ?? 0) + 10;
+  const maxOrder = profiles.reduce((currentMax, profile) => Math.max(currentMax, profile.ui.order), 0);
+  const nextOrder = maxOrder + 10;
 
   return {
     id: "",

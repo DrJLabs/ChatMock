@@ -126,7 +126,11 @@ def create_app(
     def _get_instance_service():
         service = app.config.get("INSTANCE_SERVICE")
         if service is None:
-            service = build_instance_service(repo_root=repo_root_path)
+            service = build_instance_service(
+                repo_root=repo_root_path,
+                profiles_root=profiles_root,
+                instances_root=instances_root,
+            )
             app.config["INSTANCE_SERVICE"] = service
         return service
 

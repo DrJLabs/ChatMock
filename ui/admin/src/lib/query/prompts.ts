@@ -32,11 +32,18 @@ export function usePromptMutations() {
       mutationKey: adminMutationKeys.prompts,
       mutationFn: async (payload: PromptFilePayload) => {
         const next = await apiJson<PromptFilePayload>("/admin/prompts/files/write", "POST", payload);
-        const promptState = await apiGet<PromptState>("/admin/prompts");
-        return { next, promptState };
+        try {
+          const promptState = await apiGet<PromptState>("/admin/prompts");
+          return { next, promptState };
+        } catch {
+          void queryClient.invalidateQueries({ queryKey: adminQueryKeys.prompts });
+          return { next, promptState: undefined };
+        }
       },
       onSuccess: ({ promptState }) => {
-        queryClient.setQueryData(adminQueryKeys.prompts, promptState);
+        if (promptState != null) {
+          queryClient.setQueryData(adminQueryKeys.prompts, promptState);
+        }
       },
     }),
   };

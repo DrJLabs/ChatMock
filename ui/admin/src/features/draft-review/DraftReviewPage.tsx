@@ -21,6 +21,8 @@ export function DraftReviewPage({
   onApply,
   onReset,
 }: DraftReviewPageProps) {
+  const canApply = Boolean(draft?.dirty && validation?.ok);
+
   return (
     <section className="page-grid">
       <div className="panel-card">
@@ -39,7 +41,7 @@ export function DraftReviewPage({
             <button className="danger-button" disabled={busy} onClick={onReset}>
               Discard Draft
             </button>
-            <button className="primary-button" disabled={busy} onClick={onApply}>
+            <button className="primary-button" disabled={busy || !canApply} onClick={onApply}>
               Apply Draft
             </button>
           </div>
@@ -59,7 +61,7 @@ export function DraftReviewPage({
           </div>
           <div>
             <dt>Validation</dt>
-            <dd>{validation?.ok ? "Passing" : "Needs attention"}</dd>
+            <dd>{validation == null ? "Not run" : validation.ok ? "Passing" : "Needs attention"}</dd>
           </div>
         </dl>
       </div>

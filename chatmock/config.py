@@ -52,7 +52,76 @@ def write_prompt_text(path: Path, text: str) -> None:
     if not isinstance(text, str):
         raise ValueError(f"Prompt file {path} content must be a string")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    _write_text_atomically(path, text)
+
+
+def write_prompt_texts_atomically(items: list[tuple[Path, str]]) -> None:
+    staged: list[tuple[Path, Path]] = []
+    replaced: list[tuple[Path, Path | None]] = []
+
+    try:
+        for path, text in items:
+            if not isinstance(text, str):
+                raise ValueError(f"Prompt file {path} content must be a string")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            staged.append((path, _stage_text_file(path, text)))
+
+        for path, staged_path in staged:
+            backup_path: Path | None = None
+            if path.exists():
+                backup_path = _reserve_temp_path(path.parent, path.name, "bak")
+                os.replace(path, backup_path)
+            try:
+                os.replace(staged_path, path)
+            except Exception:
+                if backup_path is not None and backup_path.exists():
+                    os.replace(backup_path, path)
+                raise
+            replaced.append((path, backup_path))
+    except Exception:
+        for path, backup_path in reversed(replaced):
+            if path.exists():
+                path.unlink()
+            if backup_path is not None and backup_path.exists():
+                os.replace(backup_path, path)
+        raise
+    finally:
+        for _, staged_path in staged:
+            if staged_path.exists():
+                staged_path.unlink()
+
+    for _, backup_path in replaced:
+        if backup_path is not None and backup_path.exists():
+            backup_path.unlink()
+
+
+def _write_text_atomically(path: Path, text: str) -> None:
+    staged_path = _stage_text_file(path, text)
+    try:
+        os.replace(staged_path, path)
+    finally:
+        if staged_path.exists():
+            staged_path.unlink()
+
+
+def _stage_text_file(path: Path, text: str) -> Path:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        dir=path.parent,
+        delete=False,
+        encoding="utf-8",
+    ) as temp_file:
+        temp_file.write(text)
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+        return Path(temp_file.name)
+
+
+def _reserve_temp_path(parent: Path, stem: str, suffix: str) -> Path:
+    candidate = parent / f".{stem}.{suffix}.{time.time_ns()}"
+    while candidate.exists():
+        candidate = parent / f".{stem}.{suffix}.{time.time_ns()}"
+    return candidate
 
 
 def _resolve_static_prompt_config() -> dict[str, str | None]:

@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+
 import type { InstancePreview, PromptState, RuntimeRedeployResponse, ValidationSummary } from "../../lib/types/admin";
 
 type RuntimeActionsPageProps = {
@@ -28,15 +30,15 @@ export function RuntimeActionsPage({
             <h2>Immediate operator actions stay separate from draft config edits.</h2>
           </div>
           <div className="editor-actions">
-            <button className="secondary-button" disabled={busy} onClick={onValidate}>
+            <Button disabled={busy} variant="outline" onClick={onValidate}>
               Validate Current Runtime
-            </button>
-            <button className="secondary-button" disabled={busy} onClick={onReloadPrompts}>
+            </Button>
+            <Button disabled={busy} variant="outline" onClick={onReloadPrompts}>
               Reload Prompts
-            </button>
-            <button
-              className="danger-button"
+            </Button>
+            <Button
               disabled={busy}
+              variant="destructive"
               onClick={async () => {
                 if (!window.confirm("Redeploy the running ChatMock stack now?")) {
                   return;
@@ -45,7 +47,7 @@ export function RuntimeActionsPage({
               }}
             >
               Redeploy
-            </button>
+            </Button>
           </div>
         </div>
         <dl className="key-value-list">

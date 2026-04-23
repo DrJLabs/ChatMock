@@ -19,8 +19,16 @@ export type InstanceFormValues = {
   enabled: boolean;
 };
 
+function normalizePort(port: number): number {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Port must be an integer between 1 and 65535.");
+  }
+  return port;
+}
+
 export function buildNewInstanceFormValues(instances: Instance[], profiles: Profile[]): InstanceFormValues {
-  const nextOrder = (instances[instances.length - 1]?.ui.order ?? 0) + 10;
+  const maxOrder = instances.reduce((currentMax, instance) => Math.max(currentMax, instance.ui.order), 0);
+  const nextOrder = maxOrder + 10;
 
   return {
     id: "",
@@ -69,7 +77,7 @@ export function formValuesToInstance(values: InstanceFormValues): Instance {
     label: values.label.trim(),
     profile_id: values.profile_id,
     bind_host: values.bind_host.trim(),
-    port: Number.isFinite(values.port) ? values.port : 0,
+    port: normalizePort(values.port),
     runtime: values.runtime,
     prompt_config_path: values.prompt_config_path.trim(),
     state_group: values.state_group.trim(),

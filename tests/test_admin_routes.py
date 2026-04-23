@@ -1,7 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
+from unittest.mock import patch
 
 from chatmock.app import create_app
+from chatmock.config import write_prompt_texts_atomically
 
 
 def _write_admin_index(dist_dir: Path, body: str = "<h1>ChatMock Admin</h1>") -> None:
@@ -137,14 +139,21 @@ def test_admin_ui_index_serves_built_assets(tmp_path: Path):
 def test_admin_ui_unknown_path_falls_back_to_index(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     _write_admin_index(dist_dir, "<h1>Instances</h1>")
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    (assets_dir / "app.js").write_text("console.log('admin');", encoding="utf-8")
     app = create_app(admin_ui_dist_dir=str(dist_dir))
     client = app.test_client()
 
     response = client.get("/admin/ui/instances")
+    asset_response = client.get("/admin/ui/assets/app.js")
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     assert b"Instances" in response.data
+    assert asset_response.status_code == 200
+    assert asset_response.mimetype == "text/javascript"
+    assert b"console.log('admin');" in asset_response.data
 
 
 def test_admin_ui_trailing_slash_serves_index(tmp_path: Path):
@@ -316,3 +325,37 @@ def test_prompt_file_write_updates_disk_and_reloads_current_prompt_set(tmp_path:
     current_prompt_state = client.get("/admin/prompts").get_json()
     assert current_prompt_state["base_prompt_text"] == "bare base updated"
     assert current_prompt_state["codex_prompt_text"] == "bare codex updated"
+
+
+def test_atomic_prompt_file_write_rolls_back_on_failure(tmp_path: Path):
+    base_path = tmp_path / "prompt.md"
+    codex_path = tmp_path / "prompt_gpt5_codex.md"
+    base_path.write_text("base original", encoding="utf-8")
+    codex_path.write_text("codex original", encoding="utf-8")
+
+    from chatmock import config as config_module
+
+    original_replace = config_module.os.replace
+    call_count = {"value": 0}
+
+    def flaky_replace(src, dst):
+        call_count["value"] += 1
+        if call_count["value"] == 2:
+            raise OSError("simulated replace failure")
+        return original_replace(src, dst)
+
+    with patch.object(config_module.os, "replace", flaky_replace):
+        try:
+            write_prompt_texts_atomically(
+                [
+                    (base_path, "base updated"),
+                    (codex_path, "codex updated"),
+                ]
+            )
+        except OSError as exc:
+            assert "simulated replace failure" in str(exc)
+        else:
+            raise AssertionError("Expected write_prompt_texts_atomically() to fail")
+
+    assert base_path.read_text(encoding="utf-8") == "base original"
+    assert codex_path.read_text(encoding="utf-8") == "codex original"

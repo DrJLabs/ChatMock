@@ -2,7 +2,7 @@
   "name": "ChatMock Admin",
   "short_name": "ChatMock",
   "description": "Operator console for ChatMock runtime, config, and prompt management.",
-  "start_url": "/admin/ui",
+  "start_url": "/admin/ui/",
   "scope": "/admin/ui/",
   "display": "standalone",
   "background_color": "#02091b",

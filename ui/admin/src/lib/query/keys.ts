@@ -15,5 +15,7 @@ export const adminMutationKeys = {
   instances: ["admin", "instances", "mutations"] as const,
   draft: ["admin", "draft", "mutations"] as const,
   runtime: ["admin", "runtime", "mutations"] as const,
+  runtimeValidate: ["admin", "runtime", "validate"] as const,
+  runtimeRedeploy: ["admin", "runtime", "redeploy"] as const,
   prompts: ["admin", "prompts", "mutations"] as const,
 };

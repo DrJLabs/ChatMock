@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import time
 from copy import deepcopy
@@ -37,7 +38,11 @@ class AdminDraftService:
         return deepcopy(draft)
 
     def reset(self) -> dict[str, Any]:
-        service = build_instance_service(repo_root=self.repo_root)
+        service = build_instance_service(
+            repo_root=self.repo_root,
+            profiles_root=self.profiles_root,
+            instances_root=self.instances_root,
+        )
         self._draft = {
             "profiles": service.list_profiles(),
             "instances": service.list_instances(),
@@ -149,16 +154,36 @@ class AdminDraftService:
         if not validation["ok"]:
             raise ValueError("; ".join(validation["errors"]))
         service = self._build_draft_service()
-        self._write_yaml_directory(
+        staged_profiles_root = self._stage_yaml_directory(
             self.profiles_root,
             service.list_profiles(),
             serializer=serialize_profile_config,
         )
-        self._write_yaml_directory(
+        staged_instances_root = self._stage_yaml_directory(
             self.instances_root,
             service.list_instances(),
             serializer=serialize_instance_config,
         )
+        backups: list[tuple[Path, Path | None]] = []
+        try:
+            backups.append(
+                (self.profiles_root, self._swap_staged_yaml_directory(self.profiles_root, staged_profiles_root))
+            )
+            backups.append(
+                (self.instances_root, self._swap_staged_yaml_directory(self.instances_root, staged_instances_root))
+            )
+        except Exception:
+            for root, backup_root in reversed(backups):
+                self._restore_yaml_directory(root, backup_root)
+            raise
+        finally:
+            for staged_root in (staged_profiles_root, staged_instances_root):
+                if staged_root.exists():
+                    shutil.rmtree(staged_root)
+
+        for _, backup_root in backups:
+            if backup_root is not None and backup_root.exists():
+                shutil.rmtree(backup_root)
         return self.reset()
 
     def _ensure_draft(self) -> dict[str, Any]:
@@ -176,32 +201,46 @@ class AdminDraftService:
         )
         return InstanceService(
             repo_root=self.repo_root,
+            profiles_root=self.profiles_root,
+            instances_root=self.instances_root,
             profiles=normalized_profiles,
             instances=normalized_instances,
         )
 
-    def _write_yaml_directory(
+    def _stage_yaml_directory(
         self,
         root: Path,
         items: list[dict[str, Any]],
         *,
         serializer,
-    ) -> None:
-        root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=root.parent) as temp_dir:
-            temp_root = Path(temp_dir)
-            expected_names: set[str] = set()
-            for item in items:
-                payload = serializer(item)
-                filename = f'{item["id"]}.yaml'
-                expected_names.add(filename)
-                temp_path = temp_root / filename
-                temp_path.write_text(
-                    yaml.safe_dump(payload, sort_keys=False, allow_unicode=False),
-                    encoding="utf-8",
-                )
-            for temp_path in temp_root.glob("*.yaml"):
-                os.replace(temp_path, root / temp_path.name)
-            for existing in root.glob("*.yaml"):
-                if existing.name not in expected_names:
-                    existing.unlink()
+    ) -> Path:
+        root.parent.mkdir(parents=True, exist_ok=True)
+        temp_root = Path(tempfile.mkdtemp(prefix=f".{root.name}.stage-", dir=root.parent))
+        for item in items:
+            payload = serializer(item)
+            filename = f'{item["id"]}.yaml'
+            temp_path = temp_root / filename
+            temp_path.write_text(
+                yaml.safe_dump(payload, sort_keys=False, allow_unicode=False),
+                encoding="utf-8",
+            )
+        return temp_root
+
+    def _swap_staged_yaml_directory(self, root: Path, staged_root: Path) -> Path | None:
+        backup_root: Path | None = None
+        if root.exists():
+            backup_root = root.parent / f".{root.name}.backup-{time.time_ns()}"
+            os.replace(root, backup_root)
+        try:
+            os.replace(staged_root, root)
+        except Exception:
+            if backup_root is not None and backup_root.exists():
+                os.replace(backup_root, root)
+            raise
+        return backup_root
+
+    def _restore_yaml_directory(self, root: Path, backup_root: Path | None) -> None:
+        if root.exists():
+            shutil.rmtree(root)
+        if backup_root is not None and backup_root.exists():
+            os.replace(backup_root, root)

@@ -30,9 +30,10 @@ export function useCurrentPreviewsQuery(instances: Instance[]) {
         return [] satisfies InstancePreview[];
       }
 
-      return Promise.all(
+      const settled = await Promise.allSettled(
         instances.map((instance) => apiGet<InstancePreview>(`/admin/instances/${instance.id}/preview`)),
       );
+      return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
     },
   });
 }

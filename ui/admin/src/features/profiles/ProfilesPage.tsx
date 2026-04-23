@@ -64,6 +64,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
     () => profiles.find((profile) => profile.id === selectedId) ?? profiles[0] ?? null,
     [profiles, selectedId],
   );
+  const requiredTrimmed = (message: string) => (value: string) => value.trim().length > 0 || message;
 
   if (!isCreating && activeProfile == null) {
     return (
@@ -111,6 +112,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
           {profiles.map((profile) => (
             <button
               key={profile.id}
+              type="button"
               className={`list-item ${profile.id === selectedId && !isCreating ? "active" : ""}`}
               onClick={() => {
                 setIsCreating(false);
@@ -162,7 +164,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
                 aria-invalid={errors.id ? true : undefined}
                 readOnly={!isCreating}
                 {...register("id", {
-                  required: "Profile ID is required.",
+                  validate: requiredTrimmed("Profile ID is required."),
                 })}
               />
               <FieldError message={errors.id?.message} />
@@ -172,7 +174,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
               <Input
                 aria-invalid={errors.label ? true : undefined}
                 {...register("label", {
-                  required: "Label is required.",
+                  validate: requiredTrimmed("Label is required."),
                 })}
               />
               <FieldError message={errors.label?.message} />
@@ -186,7 +188,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
               <Input
                 aria-invalid={errors.prompt_dir ? true : undefined}
                 {...register("prompt_dir", {
-                  required: "Prompt directory is required.",
+                  validate: requiredTrimmed("Prompt directory is required."),
                 })}
               />
               <FieldError message={errors.prompt_dir?.message} />
@@ -196,7 +198,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
               <Input
                 aria-invalid={errors.base_prompt_path ? true : undefined}
                 {...register("base_prompt_path", {
-                  required: "Base prompt path is required.",
+                  validate: requiredTrimmed("Base prompt path is required."),
                 })}
               />
               <FieldError message={errors.base_prompt_path?.message} />
@@ -206,7 +208,7 @@ export function ProfilesPage({ profiles, busy, onSaveProfile, onCreateProfile, o
               <Input
                 aria-invalid={errors.codex_prompt_path ? true : undefined}
                 {...register("codex_prompt_path", {
-                  required: "Codex prompt path is required.",
+                  validate: requiredTrimmed("Codex prompt path is required."),
                 })}
               />
               <FieldError message={errors.codex_prompt_path?.message} />

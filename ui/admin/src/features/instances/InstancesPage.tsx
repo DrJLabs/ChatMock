@@ -74,9 +74,16 @@ export function InstancesPage({
     }
 
     const next = instances.find((instance) => instance.id === selectedId) ?? instances[0] ?? null;
-    setSelectedId(next?.id ?? null);
-    reset(next ? instanceToFormValues(next) : buildNewInstanceFormValues(instances, profiles));
-  }, [instances, isCreating, profiles, reset, selectedId]);
+    if (next?.id !== selectedId) {
+      setSelectedId(next?.id ?? null);
+      reset(next ? instanceToFormValues(next) : buildNewInstanceFormValues(instances, profiles));
+      return;
+    }
+
+    if (!isDirty && next != null) {
+      reset(instanceToFormValues(next));
+    }
+  }, [instances, isCreating, profiles, reset, selectedId, isDirty]);
 
   const currentLabel = watch("label");
   const activeInstance = useMemo(
@@ -130,6 +137,7 @@ export function InstancesPage({
           {instances.map((instance) => (
             <button
               key={instance.id}
+              type="button"
               className={`list-item ${instance.id === selectedId && !isCreating ? "active" : ""}`}
               onClick={() => {
                 setIsCreating(false);
@@ -231,6 +239,8 @@ export function InstancesPage({
                 {...register("port", {
                   valueAsNumber: true,
                   required: "Port is required.",
+                  validate: (value) =>
+                    Number.isInteger(value) || "Port must be an integer between 1 and 65535.",
                   min: {
                     value: 1,
                     message: "Port must be between 1 and 65535.",

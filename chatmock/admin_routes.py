@@ -6,7 +6,7 @@ from typing import Any
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
-from .config import _read_prompt_text, write_prompt_text
+from .config import _read_prompt_text, write_prompt_texts_atomically
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -197,8 +197,12 @@ def admin_prompt_files_write():
         codex_prompt_text = payload["codex_prompt_text"]
         base_path = _resolve_prompt_file_path(base_prompt_path)
         codex_path = _resolve_prompt_file_path(codex_prompt_path)
-        write_prompt_text(base_path, base_prompt_text)
-        write_prompt_text(codex_path, codex_prompt_text)
+        write_prompt_texts_atomically(
+            [
+                (base_path, base_prompt_text),
+                (codex_path, codex_prompt_text),
+            ]
+        )
 
         prompt_manager = current_app.config["PROMPT_MANAGER"]
         current_state = prompt_manager.get_state()

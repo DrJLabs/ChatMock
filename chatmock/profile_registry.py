@@ -123,10 +123,22 @@ def _coerce_profile_data(data: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(data)
     base_prompt_path = normalized.get("base_prompt_path")
     codex_prompt_path = normalized.get("codex_prompt_path")
+    prompt_dir = normalized.get("prompt_dir")
+    prompt_dir_path = Path(prompt_dir) if isinstance(prompt_dir, str) and prompt_dir.strip() else None
+
+    def _relative_prompt_file(path_value: str) -> str:
+        path = Path(path_value)
+        if prompt_dir_path is None:
+            return path.as_posix()
+        try:
+            return path.relative_to(prompt_dir_path).as_posix()
+        except ValueError:
+            return path.name
+
     if "base_prompt_file" not in normalized and isinstance(base_prompt_path, str) and base_prompt_path.strip():
-        normalized["base_prompt_file"] = Path(base_prompt_path).name
+        normalized["base_prompt_file"] = _relative_prompt_file(base_prompt_path)
     if "codex_prompt_file" not in normalized and isinstance(codex_prompt_path, str) and codex_prompt_path.strip():
-        normalized["codex_prompt_file"] = Path(codex_prompt_path).name
+        normalized["codex_prompt_file"] = _relative_prompt_file(codex_prompt_path)
     return normalized
 
 
@@ -146,13 +158,15 @@ def validate_profiles_data(profiles: list[dict[str, Any]], *, repo_root: Path) -
 
 
 def serialize_profile_config(profile: dict[str, Any]) -> dict[str, Any]:
+    prompt_dir = Path(profile["prompt_dir"])
+
     data = {
         "id": profile["id"],
         "label": profile["label"],
         "description": profile["description"],
         "prompt_dir": profile["prompt_dir"],
-        "base_prompt_file": Path(profile["base_prompt_path"]).name,
-        "codex_prompt_file": Path(profile["codex_prompt_path"]).name,
+        "base_prompt_file": Path(profile["base_prompt_path"]).relative_to(prompt_dir).as_posix(),
+        "codex_prompt_file": Path(profile["codex_prompt_path"]).relative_to(prompt_dir).as_posix(),
         "runtime_defaults": dict(profile["runtime_defaults"]),
         "ui": dict(profile["ui"]),
     }

@@ -18,8 +18,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/admin": "http://127.0.0.1:8000"
-    }
+      "^/admin(?:/(?!ui(?:/|$)).*)?$": "http://127.0.0.1:8000",
+    },
   },
   build: {
     outDir: "dist",

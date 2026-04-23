@@ -1,5 +1,5 @@
-import { createContext, useContext, useMemo, useState } from "react";
-import { useIsFetching, useIsMutating } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
 import { Outlet } from "react-router";
 
 import {
@@ -93,10 +93,16 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const fetchingCount = useIsFetching({ queryKey: adminQueryKeys.root });
   const mutatingCount = useIsMutating({ mutationKey: adminMutationKeys.root });
 
-  const busy = fetchingCount > 0 || mutatingCount > 0;
+  const busy =
+    mutatingCount > 0 ||
+    profilesQuery.isPending ||
+    instancesQuery.isPending ||
+    draftQuery.isPending ||
+    runtimeValidationQuery.isPending ||
+    promptStateQuery.isPending ||
+    currentPreviewsQuery.isPending;
 
   const error = firstErrorMessage([
     actionError,
@@ -118,98 +124,100 @@ export default function App() {
     return draftQuery.data?.dirty ? "Draft contains unapplied edits." : "Draft and runtime are in sync.";
   }, [draftQuery.data?.dirty, error, notice]);
 
-  function clearDraftDerivedState() {
+  const clearDraftDerivedState = useCallback(() => {
     setDraftValidation(null);
     setDraftPreview(null);
-  }
+  }, []);
 
-  async function runAction<T>(message: string, action: () => Promise<T>): Promise<T> {
+  const runAction = useCallback(async <T,>(message: string, action: () => Promise<T>): Promise<T> => {
     try {
       setActionError(null);
+      setNotice(null);
       const result = await action();
       setNotice(message);
       return result;
     } catch (caught) {
+      setNotice(null);
       setActionError(toErrorMessage(caught));
       throw caught;
     }
-  }
+  }, []);
 
-  async function saveProfile(profileId: string, profile: Profile) {
+  const saveProfile = useCallback(async (profileId: string, profile: Profile) => {
     clearDraftDerivedState();
     await runAction("Draft profile saved.", () =>
       profileMutations.saveProfile.mutateAsync({ profileId, profile }),
     );
-  }
+  }, [clearDraftDerivedState, profileMutations.saveProfile, runAction]);
 
-  async function createProfile(profile: Profile) {
+  const createProfile = useCallback(async (profile: Profile) => {
     clearDraftDerivedState();
     await runAction("Draft profile created.", () => profileMutations.createProfile.mutateAsync(profile));
-  }
+  }, [clearDraftDerivedState, profileMutations.createProfile, runAction]);
 
-  async function deleteProfile(profileId: string) {
+  const deleteProfile = useCallback(async (profileId: string) => {
     clearDraftDerivedState();
     await runAction("Draft profile removed.", () => profileMutations.deleteProfile.mutateAsync(profileId));
-  }
+  }, [clearDraftDerivedState, profileMutations.deleteProfile, runAction]);
 
-  async function saveInstance(instanceId: string, instance: Instance) {
+  const saveInstance = useCallback(async (instanceId: string, instance: Instance) => {
     clearDraftDerivedState();
     await runAction("Draft instance saved.", () =>
       instanceMutations.saveInstance.mutateAsync({ instanceId, instance }),
     );
-  }
+  }, [clearDraftDerivedState, instanceMutations.saveInstance, runAction]);
 
-  async function createInstance(instance: Instance) {
+  const createInstance = useCallback(async (instance: Instance) => {
     clearDraftDerivedState();
     await runAction("Draft instance created.", () => instanceMutations.createInstance.mutateAsync(instance));
-  }
+  }, [clearDraftDerivedState, instanceMutations.createInstance, runAction]);
 
-  async function deleteInstance(instanceId: string) {
+  const deleteInstance = useCallback(async (instanceId: string) => {
     clearDraftDerivedState();
     await runAction("Draft instance removed.", () => instanceMutations.deleteInstance.mutateAsync(instanceId));
-  }
+  }, [clearDraftDerivedState, instanceMutations.deleteInstance, runAction]);
 
-  async function validateDraft() {
+  const validateDraft = useCallback(async () => {
     const summary = await runAction("Draft validated.", () => draftMutations.validateDraft.mutateAsync());
     setDraftValidation(summary);
-  }
+  }, [draftMutations.validateDraft, runAction]);
 
-  async function previewDraft() {
+  const previewDraft = useCallback(async () => {
     const preview = await runAction("Draft preview refreshed.", () => draftMutations.previewDraft.mutateAsync());
     setDraftPreview(preview);
     setDraftValidation(preview.validation);
-  }
+  }, [draftMutations.previewDraft, runAction]);
 
-  async function applyDraft() {
+  const applyDraft = useCallback(async () => {
     await runAction("Draft applied to YAML.", () => draftMutations.applyDraft.mutateAsync());
     clearDraftDerivedState();
-  }
+  }, [clearDraftDerivedState, draftMutations.applyDraft, runAction]);
 
-  async function resetDraft() {
+  const resetDraft = useCallback(async () => {
     await runAction("Draft reset to current config.", () => draftMutations.resetDraft.mutateAsync());
     clearDraftDerivedState();
-  }
+  }, [clearDraftDerivedState, draftMutations.resetDraft, runAction]);
 
-  async function validateRuntime() {
+  const validateRuntime = useCallback(async () => {
     await runAction("Runtime validation refreshed.", () => runtimeMutations.validateRuntime.mutateAsync());
-  }
+  }, [runAction, runtimeMutations.validateRuntime]);
 
-  async function reloadPrompts() {
+  const reloadPrompts = useCallback(async () => {
     await runAction("Prompt files reloaded.", () => promptMutations.reloadPrompts.mutateAsync());
-  }
+  }, [promptMutations.reloadPrompts, runAction]);
 
-  async function redeployRuntime() {
+  const redeployRuntime = useCallback(async () => {
     return runAction("Redeploy requested.", () => runtimeMutations.redeployRuntime.mutateAsync());
-  }
+  }, [runAction, runtimeMutations.redeployRuntime]);
 
-  async function loadPromptFiles(payload: { base_prompt_path: string; codex_prompt_path: string }) {
+  const loadPromptFiles = useCallback(async (payload: { base_prompt_path: string; codex_prompt_path: string }) => {
     return runAction("Prompt files loaded.", () => promptMutations.readPromptFiles.mutateAsync(payload));
-  }
+  }, [promptMutations.readPromptFiles, runAction]);
 
-  async function savePromptFiles(payload: PromptFilePayload) {
+  const savePromptFiles = useCallback(async (payload: PromptFilePayload) => {
     const result = await runAction("Prompt files saved.", () => promptMutations.writePromptFiles.mutateAsync(payload));
     return result.next;
-  }
+  }, [promptMutations.writePromptFiles, runAction]);
 
   return (
     <AdminAppContext.Provider
