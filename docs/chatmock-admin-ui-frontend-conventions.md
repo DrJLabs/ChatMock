@@ -8,6 +8,8 @@
 
 Capture the stack boundaries after the admin UI migration so future work keeps the layers separate.
 
+For the full route map, component inventory, packaging path, and endpoint mapping, see `docs/chatmock-admin-ui-architecture.md`.
+
 ## Active Stack Boundaries
 
 - React Router owns route definitions and shared layout composition.
@@ -20,9 +22,11 @@ Capture the stack boundaries after the admin UI migration so future work keeps t
 
 - Routes live in `ui/admin/src/router.tsx` and `ui/admin/src/routes/`.
 - Query client setup lives in `ui/admin/src/lib/query-client.ts`.
+- Raw API calls live in `ui/admin/src/lib/api/client.ts`.
 - Query hooks live in `ui/admin/src/lib/query/`.
 - Typed form adapters live in `ui/admin/src/forms/`.
 - Shared app chrome and operator-card wrappers live in `ui/admin/src/layouts/` and `ui/admin/src/components/shared/`.
+- Repo-owned copied primitives live in `ui/admin/src/components/ui/`.
 
 ## Zustand Decision
 

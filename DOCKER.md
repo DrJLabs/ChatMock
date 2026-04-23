@@ -158,6 +158,13 @@ That emits static assets to:
 
 - `ui/admin/dist/`
 
+The container image also builds and ships these assets during `docker build`.
+At runtime the Flask app uses:
+
+- `CHATMOCK_ADMIN_UI_DIST_DIR=/app/ui/admin/dist`
+
+unless an explicit `admin_ui_dist_dir` or env override is provided.
+
 Flask serves the built SPA at:
 
 - `GET /admin/ui`
