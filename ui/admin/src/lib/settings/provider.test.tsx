@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { UISettingsProvider, useUISettings } from "./provider";
+import { seedUISettingsDocument, UISettingsProvider, useUISettings } from "./provider";
 
 function Harness() {
   const {
@@ -122,6 +122,18 @@ describe("UISettingsProvider", () => {
 
     expect(document.documentElement.dataset.theme).toBe("midnight");
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+  });
+
+  it("seeds the document root before the provider renders", () => {
+    window.localStorage.setItem(
+      "chatmock.admin.ui-settings",
+      JSON.stringify({ themeId: "midnight", codeScale: 113 }),
+    );
+
+    seedUISettingsDocument();
+
+    expect(document.documentElement.dataset.theme).toBe("midnight");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("115");
   });
 
   it("scales technical text without rescaling every code block", () => {

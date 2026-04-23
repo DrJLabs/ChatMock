@@ -83,6 +83,14 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
   return <UISettingsContext.Provider value={value}>{children}</UISettingsContext.Provider>;
 }
 
+export function seedUISettingsDocument(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  applySettingsToDocument(loadAppliedUISettings());
+}
+
 export function useUISettings(): UISettingsContextValue {
   const value = useContext(UISettingsContext);
 

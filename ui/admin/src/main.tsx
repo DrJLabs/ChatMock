@@ -4,9 +4,11 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router";
 
 import { queryClient } from "./lib/query-client";
-import { UISettingsProvider } from "./lib/settings/provider";
+import { seedUISettingsDocument, UISettingsProvider } from "./lib/settings/provider";
 import { router } from "./router";
 import "./styles.css";
+
+seedUISettingsDocument();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
