@@ -79,7 +79,8 @@ describe("admin router", () => {
 
   it("renders the settings screen from pathname routing and exposes nav links", async () => {
     const router = createMemoryRouter(adminRoutes, {
-      initialEntries: ["/settings"],
+      basename: "/admin/ui",
+      initialEntries: ["/admin/ui/settings"],
     });
     const queryClient = createQueryClient();
 
@@ -90,9 +91,9 @@ describe("admin router", () => {
     );
 
     expect(
-      await screen.findByText("Control browser-local preferences without changing live runtime config."),
+      await screen.findByRole("heading", { name: "Browser-local settings", level: 2 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("link", { name: "Settings", current: "page" })).toHaveAttribute("href", "/admin/ui/settings");
     expect(screen.getByRole("tab", { name: "UI" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Behavior" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "About" })).toBeInTheDocument();

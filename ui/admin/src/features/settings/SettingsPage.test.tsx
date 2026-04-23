@@ -1,22 +1,31 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { SettingsPage } from "./SettingsPage";
 
 describe("SettingsPage", () => {
-  it("renders the section shell with tab navigation", () => {
+  it("switches between section panels from the tab navigation", async () => {
     render(
       <SettingsPage
-        uiSection={<div>ui section</div>}
-        behaviorSection={<div>Not configured yet.</div>}
-        aboutSection={<div>Docs and build details live here.</div>}
+        uiSection={<div>UI shell content</div>}
+        behaviorSection={<div>Behavior shell content</div>}
+        aboutSection={<div>About shell content</div>}
       />,
     );
 
-    expect(screen.getByText("Control browser-local preferences without changing live runtime config.")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "UI" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Behavior" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "About" })).toBeInTheDocument();
-    expect(screen.getByText("ui section")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("UI shell content");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Behavior" }));
+
+    expect(await screen.findByText("Behavior shell content")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Behavior shell content");
+
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+
+    expect(await screen.findByText("About shell content")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("About shell content");
   });
 });

@@ -3,8 +3,8 @@ export function AboutSettingsSection() {
     <section className="page-grid">
       <article className="panel-card">
         <h3>About</h3>
-        <p className="muted">This section will hold UI metadata and reference links.</p>
-        <p className="muted">Documentation and build details can expand here later.</p>
+        <p className="muted">Reserved for build and reference details.</p>
+        <p className="muted">Shell only for now.</p>
       </article>
     </section>
   );

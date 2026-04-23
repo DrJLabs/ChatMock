@@ -9,7 +9,7 @@ export function SettingsRoute() {
         <section className="page-grid">
           <article className="panel-card">
             <h3>UI</h3>
-            <p className="muted">Theme and code size controls are added in the next task.</p>
+            <p className="muted">UI settings shell.</p>
           </article>
         </section>
       }
