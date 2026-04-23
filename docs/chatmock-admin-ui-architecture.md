@@ -49,9 +49,17 @@ It owns:
 - all mutation hooks for profiles, instances, draft actions, runtime actions, and prompt file operations
 - derived global operator state such as `busy`, `error`, `notice`, `statusText`
 - the `AdminAppContext` provider consumed by route adapters
-- the browser-local settings provider wiring from `ui/admin/src/lib/settings/*`
 
 This means `App.tsx` is intentionally not a presentational component. It is the shared admin-control provider.
+
+`ui/admin/src/main.tsx` is the browser bootstrap boundary for the SPA.
+
+It owns:
+
+- the `UISettingsProvider` bootstrap from `ui/admin/src/lib/settings/provider.tsx`
+- the React root render pipeline around `QueryClientProvider` and `RouterProvider`
+
+This keeps browser-local settings initialization outside the admin data orchestration boundary.
 
 ## Layer Boundaries
 
@@ -101,6 +109,7 @@ Files:
 - `ui/admin/src/routes/CurrentStateRoute.tsx`
 - `ui/admin/src/routes/EditConfigRoute.tsx`
 - `ui/admin/src/routes/PromptFilesRoute.tsx`
+- `ui/admin/src/routes/SettingsRoute.tsx`
 
 Responsibilities:
 
@@ -297,6 +306,19 @@ Primary actions:
 - `POST /admin/prompts/files/write`
 - `POST /admin/prompts/reload`
 - `POST /admin/prompts/config`
+
+### Settings
+
+Route shape:
+
+- `SettingsRoute` is a shell-first browser-local route adapter under `/admin/ui/settings`
+- it renders `SettingsPage` inside the shared admin shell and does not own a dedicated `/admin/*` backend contract
+
+Data contract:
+
+- browser-local only
+- no `GET`/`POST` admin endpoint contract
+- settings state lives in `ui/admin/src/lib/settings/*` and is applied through document/local storage behavior
 
 ## Agent Documentation Strategy
 

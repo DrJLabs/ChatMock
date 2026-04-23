@@ -25,7 +25,8 @@ Use Context7 for current third-party library APIs:
 - Treat `src/App.tsx` as the admin orchestration/provider boundary, not a presentational leaf.
 - Treat `src/router.tsx` and `src/layouts/AdminLayout.tsx` as route and shell ownership only.
 - Treat `src/lib/query/` and `src/lib/api/client.ts` as the server-state and request boundary.
-- Treat `src/lib/settings/` as the browser-local preview/apply/reset boundary for theme and code-size preferences.
+- Treat `src/lib/settings/provider.tsx` as the browser-local preview/apply/reset boundary for theme and code-size preferences.
+- Treat `src/lib/settings/` as the browser-local settings domain for types, storage, and theme presets.
 - Treat `src/forms/` as typed form adapters, not network or layout code.
 - Treat `src/components/ui/` as repo-owned copied primitives. Upstream shadcn docs are reference material, but local component files are the real source of truth.
 - Treat `src/components/shared/` as the ChatMock normalization layer for repeated operator-facing wrappers and patterns.
@@ -49,5 +50,6 @@ Useful checks from repo root:
 ```bash
 /home/drj/tools/chatmock/.venv/bin/python -m pytest tests/test_admin_routes.py -q
 /home/drj/tools/chatmock/.venv/bin/python -m pytest tests/test_routes.py -q
+cd ui/admin && npm test
 cd ui/admin && npm run build
 ```
