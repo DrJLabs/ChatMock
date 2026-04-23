@@ -4,6 +4,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "./lib/query-client";
+import { UISettingsProvider } from "./lib/settings/provider";
 import { adminRoutes } from "./router";
 
 describe("admin router", () => {
@@ -66,9 +67,11 @@ describe("admin router", () => {
     const queryClient = createQueryClient();
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
+      <UISettingsProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </UISettingsProvider>,
     );
 
     expect(
@@ -85,9 +88,11 @@ describe("admin router", () => {
     const queryClient = createQueryClient();
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
+      <UISettingsProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </UISettingsProvider>,
     );
 
     expect(
@@ -97,5 +102,8 @@ describe("admin router", () => {
     expect(screen.getByRole("tab", { name: "UI" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Behavior" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "About" })).toBeInTheDocument();
+    expect(screen.getByText("Theme")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Midnight" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Code and prompt text size")).toBeInTheDocument();
   });
 });
