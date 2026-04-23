@@ -6,6 +6,7 @@ import { AdminLayout } from "./layouts/AdminLayout";
 import { CurrentStateRoute } from "./routes/CurrentStateRoute";
 import { EditConfigRoute } from "./routes/EditConfigRoute";
 import { PromptFilesRoute } from "./routes/PromptFilesRoute";
+import { SettingsRoute } from "./routes/SettingsRoute";
 
 export const adminRoutes: RouteObject[] = [
   {
@@ -26,6 +27,10 @@ export const adminRoutes: RouteObject[] = [
           {
             path: "prompt-files",
             element: <PromptFilesRoute />,
+          },
+          {
+            path: "settings",
+            element: <SettingsRoute />,
           },
         ],
       },

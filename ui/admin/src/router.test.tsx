@@ -76,4 +76,25 @@ describe("admin router", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Edit Config" })).toHaveAttribute("href", "/edit-config");
   });
+
+  it("renders the settings screen from pathname routing and exposes nav links", async () => {
+    const router = createMemoryRouter(adminRoutes, {
+      initialEntries: ["/settings"],
+    });
+    const queryClient = createQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText("Control browser-local preferences without changing live runtime config."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("tab", { name: "UI" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Behavior" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "About" })).toBeInTheDocument();
+  });
 });
