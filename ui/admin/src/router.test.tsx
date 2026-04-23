@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -135,5 +135,34 @@ describe("admin router", () => {
     expect(await screen.findByText("See what is live first, then act deliberately.")).toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe("obsidian");
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("100");
+  });
+
+  it("keeps applied settings active when applying without leaving the route", async () => {
+    const router = createMemoryRouter(adminRoutes, {
+      basename: "/admin/ui",
+      initialEntries: ["/admin/ui/settings"],
+    });
+    const queryClient = createQueryClient();
+
+    render(
+      <UISettingsProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </UISettingsProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Midnight" }));
+    fireEvent.change(screen.getByLabelText("Code and prompt text size"), {
+      target: { value: "120" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Applied settings are active.")).toBeInTheDocument();
+      expect(document.documentElement.dataset.theme).toBe("midnight");
+      expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+      expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    });
   });
 });

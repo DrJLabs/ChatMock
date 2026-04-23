@@ -171,7 +171,8 @@ Notes:
 - `EditConfigPage` composes the structural editing subfeatures.
 - `PromptFilesPage` owns immediate prompt-file editing and explicitly does not participate in draft/apply.
 - `SettingsRoute` uses `SettingsPage` as the browser-local preferences surface.
-- `SettingsPage` owns browser-local preferences only: applied theme and code-size settings, live preview, and `Apply` / `Reset` behavior.
+- `SettingsPage` owns the settings tab layout; `UISettingsSection` renders browser-local preference controls.
+- Applied theme, code-size settings, live preview, and `Apply` / `Reset` behavior stay in the `ui/admin/src/lib/settings/` provider layer.
 - `BehaviorSettingsSection` and `AboutSettingsSection` are scaffold sections in the first pass and stay within the settings route boundary.
 - `RuntimeActionsPage` and `DraftReviewPage` remain feature modules used inside larger route surfaces rather than top-level routes.
 

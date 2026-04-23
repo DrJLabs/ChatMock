@@ -3,7 +3,7 @@ FROM node:22-slim AS admin-ui-builder
 WORKDIR /ui/admin
 
 COPY ui/admin/package.json ui/admin/package-lock.json ./
-RUN npm install
+RUN npm ci
 
 COPY ui/admin ./
 RUN npm run build
@@ -22,10 +22,14 @@ COPY chatmock /app/chatmock
 COPY --from=admin-ui-builder /ui/admin/dist /app/ui/admin/dist
 RUN pip install --no-cache-dir .
 
-RUN mkdir -p /data
-
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && groupadd --system chatmock \
+    && useradd --system --gid chatmock --home-dir /app --no-create-home chatmock \
+    && mkdir -p /data \
+    && chown -R chatmock:chatmock /app /data
+
+USER chatmock
 
 EXPOSE 8000 1455
 

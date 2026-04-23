@@ -66,6 +66,7 @@ def create_app(
 ) -> Flask:
     app = Flask(__name__)
     repo_root_path = Path(repo_root) if isinstance(repo_root, str) and repo_root else None
+    allowed_gateway_addresses = _discover_default_gateway_ips()
     prompt_manager = get_prompt_manager(
         prompt_dir=prompt_dir,
         prompt_config_path=prompt_config_path,
@@ -91,6 +92,7 @@ def create_app(
             if isinstance(admin_ui_dist_dir, str) and admin_ui_dist_dir.strip()
             else os.getenv("CHATMOCK_ADMIN_UI_DIST_DIR") or None
         ),
+        ALLOWED_GATEWAY_ADDRESSES=allowed_gateway_addresses,
         REPO_ROOT=repo_root_path,
         PROFILES_ROOT=profiles_root,
         INSTANCES_ROOT=instances_root,
@@ -111,7 +113,7 @@ def create_app(
         remote_addr = request.remote_addr
         allow_admin_external = os.getenv("CHATMOCK_ALLOW_ADMIN_EXTERNAL", "false").lower() == "true"
         allowed_local_addresses = {"127.0.0.1", "::1"}
-        allowed_gateway_addresses = _discover_default_gateway_ips()
+        allowed_gateway_addresses = app.config.get("ALLOWED_GATEWAY_ADDRESSES") or set()
         trusted_remote_spec = os.getenv("CHATMOCK_ADMIN_TRUSTED_IPS", "").strip()
 
         def _is_in_trusted_ranges(value: str | None) -> bool:

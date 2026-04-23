@@ -25,12 +25,7 @@ function normalizeCodeScale(value: unknown): number {
   }
 
   const rounded = Math.round(raw / CODE_SCALE_STEP) * CODE_SCALE_STEP;
-
-  if (rounded < MIN_CODE_SCALE || rounded > MAX_CODE_SCALE) {
-    return DEFAULT_UI_SETTINGS.codeScale;
-  }
-
-  return rounded;
+  return Math.min(MAX_CODE_SCALE, Math.max(MIN_CODE_SCALE, rounded));
 }
 
 export function normalizeUISettings(value: unknown): UISettings {

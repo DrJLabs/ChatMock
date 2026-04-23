@@ -16,6 +16,7 @@ For the full route map, component inventory, packaging path, and endpoint mappin
 - TanStack Query owns server-state reads, cache invalidation, and mutation lifecycles.
 - React Hook Form owns structural editor form state and validation.
 - shadcn/ui provides the primitive component layer.
+- `src/lib/settings/` owns browser-local UI preferences, preview/draft state, and document-level theme application.
 - `src/components/shared/` is the local normalization layer for repeated ChatMock-specific wrappers and variants.
 
 ## File-Level Conventions
@@ -24,6 +25,7 @@ For the full route map, component inventory, packaging path, and endpoint mappin
 - Query client setup lives in `ui/admin/src/lib/query-client.ts`.
 - Raw API calls live in `ui/admin/src/lib/api/client.ts`.
 - Query hooks live in `ui/admin/src/lib/query/`.
+- Browser-local settings live in `ui/admin/src/lib/settings/`.
 - Typed form adapters live in `ui/admin/src/forms/`.
 - Shared app chrome and operator-card wrappers live in `ui/admin/src/layouts/` and `ui/admin/src/components/shared/`.
 - Repo-owned copied primitives live in `ui/admin/src/components/ui/`.

@@ -45,13 +45,15 @@ export function PromptFilesPage({
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null,
     [profiles, selectedProfileId],
   );
+  const selectedBasePromptPath = selectedProfile?.base_prompt_path ?? null;
+  const selectedCodexPromptPath = selectedProfile?.codex_prompt_path ?? null;
 
   useEffect(() => {
     loadPromptFilesRef.current = onLoadPromptFiles;
   }, [onLoadPromptFiles]);
 
   useEffect(() => {
-    if (selectedProfile == null) {
+    if (selectedBasePromptPath == null || selectedCodexPromptPath == null) {
       setPromptFiles(null);
       return;
     }
@@ -59,8 +61,8 @@ export function PromptFilesPage({
     void (async () => {
       try {
         const payload = await loadPromptFilesRef.current({
-          base_prompt_path: selectedProfile.base_prompt_path,
-          codex_prompt_path: selectedProfile.codex_prompt_path,
+          base_prompt_path: selectedBasePromptPath,
+          codex_prompt_path: selectedCodexPromptPath,
         });
         if (active) {
           setPromptFiles(payload);
@@ -74,9 +76,9 @@ export function PromptFilesPage({
     return () => {
       active = false;
     };
-  }, [selectedProfile]);
+  }, [selectedBasePromptPath, selectedCodexPromptPath]);
 
-  if (selectedProfile == null) {
+  if (selectedProfile == null || selectedBasePromptPath == null || selectedCodexPromptPath == null) {
     return (
       <SurfaceCard>
         <SurfaceCardHeader>
@@ -121,8 +123,8 @@ export function PromptFilesPage({
             onClick={async () => {
               try {
                 const payload = await onLoadPromptFiles({
-                  base_prompt_path: selectedProfile.base_prompt_path,
-                  codex_prompt_path: selectedProfile.codex_prompt_path,
+                  base_prompt_path: selectedBasePromptPath,
+                  codex_prompt_path: selectedCodexPromptPath,
                 });
                 setPromptFiles(payload);
               } catch {
@@ -164,11 +166,11 @@ export function PromptFilesPage({
               </div>
               <div>
                 <dt>Selected base path</dt>
-                <dd>{selectedProfile.base_prompt_path}</dd>
+                <dd>{selectedBasePromptPath}</dd>
               </div>
               <div>
                 <dt>Selected codex path</dt>
-                <dd>{selectedProfile.codex_prompt_path}</dd>
+                <dd>{selectedCodexPromptPath}</dd>
               </div>
             </dl>
           </SurfaceCardContent>
@@ -200,7 +202,7 @@ export function PromptFilesPage({
             <SurfaceCardHeader>
               <div>
                 <p className="eyebrow">Base Prompt</p>
-                <SurfaceCardTitle>{selectedProfile.base_prompt_path}</SurfaceCardTitle>
+                <SurfaceCardTitle>{selectedBasePromptPath}</SurfaceCardTitle>
               </div>
             </SurfaceCardHeader>
             <SurfaceCardContent>
@@ -221,7 +223,7 @@ export function PromptFilesPage({
             <SurfaceCardHeader>
               <div>
                 <p className="eyebrow">Codex Prompt</p>
-                <SurfaceCardTitle>{selectedProfile.codex_prompt_path}</SurfaceCardTitle>
+                <SurfaceCardTitle>{selectedCodexPromptPath}</SurfaceCardTitle>
               </div>
             </SurfaceCardHeader>
             <SurfaceCardContent>

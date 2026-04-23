@@ -51,7 +51,7 @@ describe("UI settings storage", () => {
     );
   });
 
-  it("returns defaults when saving fails", () => {
+  it("does not throw when saving fails", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });

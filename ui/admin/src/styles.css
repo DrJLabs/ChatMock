@@ -288,7 +288,7 @@
   a:focus-visible,
   summary:focus-visible {
     @apply ring-2 ring-primary/25 ring-offset-2;
-    --tw-ring-offset-color: #08111d;
+    --tw-ring-offset-color: var(--background);
   }
 }
 
@@ -460,8 +460,11 @@
 
   .primary-button {
     @apply text-primary-foreground;
-    background:
-      linear-gradient(180deg, rgba(143, 198, 255, 0.96) 0%, rgba(93, 136, 199, 0.95) 100%);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
+      color-mix(in srgb, var(--chart-2) 78%, var(--background) 22%) 100%
+    );
     box-shadow: var(--shadow-soft);
   }
 
@@ -499,7 +502,6 @@
   }
 
   .technical-text {
-    font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
     line-height: 1.65;
   }
 

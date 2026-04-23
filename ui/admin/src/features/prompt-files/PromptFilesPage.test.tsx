@@ -54,7 +54,13 @@ function PromptFilesHarness({
 
   return (
     <PromptFilesPage
-      profiles={[PROFILE]}
+      profiles={[
+        {
+          ...PROFILE,
+          runtime_defaults: { ...PROFILE.runtime_defaults },
+          ui: { ...PROFILE.ui },
+        },
+      ]}
       prompts={PROMPT_STATE}
       busy={false}
       onLoadPromptFiles={onLoadPromptFiles}
