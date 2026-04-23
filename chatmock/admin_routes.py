@@ -77,20 +77,14 @@ def _resolve_prompt_file_path(raw_path: str) -> Path:
 def _normalize_prompt_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
 
-    def _normalize_config_path(raw_path: str) -> str:
-        candidate = Path(raw_path).expanduser()
-        if candidate.is_absolute():
-            return str(candidate.resolve())
-        return str(_resolve_prompt_file_path(raw_path))
-
     prompt_dir = normalized.get("prompt_dir")
     if isinstance(prompt_dir, str) and prompt_dir.strip():
-        normalized["prompt_dir"] = _normalize_config_path(prompt_dir)
+        normalized["prompt_dir"] = str(_resolve_prompt_file_path(prompt_dir))
 
     for key in ("base_prompt_path", "codex_prompt_path"):
         raw_value = normalized.get(key)
         if isinstance(raw_value, str) and raw_value.strip():
-            normalized[key] = _normalize_config_path(raw_value)
+            normalized[key] = str(_resolve_prompt_file_path(raw_value))
 
     return normalized
 
@@ -141,9 +135,14 @@ def _serve_admin_ui_path(path: str = ""):
 
     normalized_path = path.strip("/")
     if normalized_path:
-        asset_path = dist_dir / normalized_path
-        if asset_path.is_file():
-            return send_from_directory(dist_dir, normalized_path)
+        try:
+            resolved_dist = dist_dir.resolve()
+            asset_path = (resolved_dist / normalized_path).resolve()
+            asset_path.relative_to(resolved_dist)
+            if asset_path.is_file():
+                return send_from_directory(dist_dir, normalized_path)
+        except (OSError, ValueError):
+            pass
 
     index_path = dist_dir / "index.html"
     if not index_path.is_file():

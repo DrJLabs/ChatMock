@@ -182,6 +182,7 @@ class RouteTests(unittest.TestCase):
                 prompt_dir=str(bare_dir),
                 prompt_config_path=str(root / "prompt-config-chatmock.json"),
                 admin_token=ADMIN_TOKEN,
+                repo_root=str(root),
             )
             client = app.test_client()
             headers = {"X-ChatMock-Admin-Token": ADMIN_TOKEN}

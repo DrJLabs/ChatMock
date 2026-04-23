@@ -156,6 +156,22 @@ def test_admin_ui_unknown_path_falls_back_to_index(tmp_path: Path):
     assert b"console.log('admin');" in asset_response.data
 
 
+def test_admin_ui_path_traversal_falls_back_to_index(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Safe Index</h1>")
+    secret_path = tmp_path / "secret.txt"
+    secret_path.write_text("top secret", encoding="utf-8")
+    app = create_app(admin_ui_dist_dir=str(dist_dir))
+    client = app.test_client()
+
+    response = client.get("/admin/ui/../secret.txt")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Safe Index" in response.data
+    assert b"top secret" not in response.data
+
+
 def test_admin_ui_trailing_slash_serves_index(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     _write_admin_index(dist_dir, "<h1>Trailing Slash</h1>")
@@ -382,6 +398,21 @@ def test_prompt_file_write_rejects_same_file_with_different_text(tmp_path: Path)
 
     assert response.status_code == 400
     assert "submitted texts must match" in response.get_json()["error"]["message"]
+
+
+def test_prompt_config_rejects_paths_outside_repo_root(tmp_path: Path):
+    app = _build_admin_app(tmp_path)
+    client = app.test_client()
+    outside_prompt_dir = tmp_path.parent / "outside-prompts"
+    outside_prompt_dir.mkdir(parents=True, exist_ok=True)
+
+    response = client.post(
+        "/admin/prompts/config",
+        json={"prompt_dir": str(outside_prompt_dir)},
+    )
+
+    assert response.status_code == 400
+    assert "must stay within repo root" in response.get_json()["error"]["message"]
 
 
 def test_atomic_prompt_file_write_rolls_back_on_failure(tmp_path: Path):

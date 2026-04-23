@@ -154,18 +154,21 @@ class AdminDraftService:
         if not validation["ok"]:
             raise ValueError("; ".join(validation["errors"]))
         service = self._build_draft_service()
-        staged_profiles_root = self._stage_yaml_directory(
-            self.profiles_root,
-            service.list_profiles(),
-            serializer=serialize_profile_config,
-        )
-        staged_instances_root = self._stage_yaml_directory(
-            self.instances_root,
-            service.list_instances(),
-            serializer=serialize_instance_config,
-        )
+        staged_roots: list[Path] = []
         backups: list[tuple[Path, Path | None]] = []
         try:
+            staged_profiles_root = self._stage_yaml_directory(
+                self.profiles_root,
+                service.list_profiles(),
+                serializer=serialize_profile_config,
+            )
+            staged_roots.append(staged_profiles_root)
+            staged_instances_root = self._stage_yaml_directory(
+                self.instances_root,
+                service.list_instances(),
+                serializer=serialize_instance_config,
+            )
+            staged_roots.append(staged_instances_root)
             backups.append(
                 (self.profiles_root, self._swap_staged_yaml_directory(self.profiles_root, staged_profiles_root))
             )
@@ -177,7 +180,7 @@ class AdminDraftService:
                 self._restore_yaml_directory(root, backup_root)
             raise
         finally:
-            for staged_root in (staged_profiles_root, staged_instances_root):
+            for staged_root in staged_roots:
                 if staged_root.exists():
                     shutil.rmtree(staged_root)
 
@@ -189,7 +192,8 @@ class AdminDraftService:
     def _ensure_draft(self) -> dict[str, Any]:
         if self._draft is None:
             self.reset()
-        assert self._draft is not None
+        if self._draft is None:
+            raise RuntimeError("Draft state unavailable after reset")
         return self._draft
 
     def _build_draft_service(self) -> InstanceService:
