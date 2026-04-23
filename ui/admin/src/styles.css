@@ -7,6 +7,14 @@
 :root {
   --admin-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --admin-code-scale: 100;
+  --radius-card: 1.4rem;
+  --radius-pill: 999px;
+  --radius: 0.75rem;
+  --shadow-panel: 0 20px 48px -28px rgba(2, 8, 19, 0.64);
+  --shadow-soft: 0 14px 32px -26px rgba(2, 8, 19, 0.5);
+}
+
+:root[data-theme="obsidian"] {
   --background: #08111d;
   --foreground: #e8f1ff;
   --card: rgb(9 24 40 / 0.94);
@@ -21,21 +29,16 @@
   --secondary-foreground: #e6edf3;
   --destructive: #f4a7a7;
   --destructive-foreground: #2b0d0d;
-  --radius-card: 1.4rem;
-  --radius-pill: 999px;
-  --shadow-panel: 0 20px 48px -28px rgba(2, 8, 19, 0.64);
-  --shadow-soft: 0 14px 32px -26px rgba(2, 8, 19, 0.5);
-  --popover: rgb(10 21 34 / 0.98);
-  --popover-foreground: #e8f1ff;
   --accent: #16202c;
   --accent-foreground: #f5f7fa;
+  --popover: rgb(10 21 34 / 0.98);
+  --popover-foreground: #e8f1ff;
   --ring: rgb(143 198 255 / 0.4);
   --chart-1: #8fc6ff;
   --chart-2: #5d88c7;
   --chart-3: #496a98;
   --chart-4: #31485f;
   --chart-5: #1f2e41;
-  --radius: 0.75rem;
   --sidebar: rgb(8 16 27 / 0.94);
   --sidebar-foreground: #e8f1ff;
   --sidebar-primary: #8fc6ff;
@@ -402,6 +405,11 @@
     @apply bg-white text-foreground;
   }
 
+  .technical-text {
+    font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
+    line-height: 1.65;
+  }
+
   .theme-preset-card {
     @apply grid gap-2 rounded-[1rem] border px-4 py-4 text-left transition-all duration-150;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
@@ -612,10 +620,16 @@
     @apply min-h-96 leading-relaxed;
   }
 
+  .technical-text,
   .prompt-textarea,
   .preview-card code,
   .advanced-card code {
     font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
+  }
+
+  .preview-card code,
+  .advanced-card code {
+    line-height: 1.65;
   }
 }
 

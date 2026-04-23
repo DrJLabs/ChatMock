@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { UISettingsProvider, useUISettings } from "./provider";
@@ -28,11 +29,33 @@ function Harness() {
   );
 }
 
+function TechnicalTextProbe() {
+  return (
+    <div>
+      <textarea className="technical-text" data-testid="technical-text" defaultValue="SELECT * FROM records;" />
+      <code data-testid="plain-code" style={{ fontSize: "16px" }}>
+        plain code
+      </code>
+    </div>
+  );
+}
+
+function getStylesheetText() {
+  return Array.from(document.head.querySelectorAll("style"))
+    .map((style) => style.textContent ?? "")
+    .join("\n");
+}
+
 describe("UISettingsProvider", () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.dataset.theme = "";
     document.documentElement.style.removeProperty("--admin-code-scale");
+    document.head.innerHTML = "";
+
+    const style = document.createElement("style");
+    style.textContent = readFileSync("src/styles.css", "utf8");
+    document.head.append(style);
   });
 
   it("normalizes draft state immediately and restores applied values on reset", () => {
@@ -99,5 +122,28 @@ describe("UISettingsProvider", () => {
 
     expect(document.documentElement.dataset.theme).toBe("midnight");
     expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+  });
+
+  it("scales technical text without rescaling every code block", () => {
+    render(
+      <UISettingsProvider>
+        <Harness />
+        <TechnicalTextProbe />
+      </UISettingsProvider>,
+    );
+
+    fireEvent.click(screen.getByText("preview theme"));
+    fireEvent.click(screen.getByText("preview scale 121"));
+
+    const technicalText = screen.getByTestId("technical-text");
+    const plainCode = screen.getByTestId("plain-code");
+    const stylesheetText = getStylesheetText();
+
+    expect(document.documentElement.dataset.theme).toBe("midnight");
+    expect(document.documentElement.style.getPropertyValue("--admin-code-scale")).toBe("120");
+    expect(technicalText).toHaveClass("technical-text");
+    expect(plainCode).not.toHaveClass("technical-text");
+    expect(stylesheetText).toMatch(/\.technical-text,\s*\.prompt-textarea,\s*\.preview-card code,\s*\.advanced-card code/);
+    expect(stylesheetText).not.toContain("code { font-size: calc(0.875rem * (var(--admin-code-scale) / 100))");
   });
 });
