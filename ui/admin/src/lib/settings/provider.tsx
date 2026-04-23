@@ -20,6 +20,8 @@ type UISettingsContextValue = {
   isDirty: boolean;
   setDraftThemeId: (themeId: ThemeId) => void;
   setDraftCodeScale: (codeScale: number) => void;
+  applyDraft: () => void;
+  resetDraft: () => void;
   applyUISettingsDraft: () => void;
   resetUISettingsDraft: () => void;
 };
@@ -74,6 +76,8 @@ export function UISettingsProvider({ children }: PropsWithChildren) {
         appliedSettings.codeScale !== draftSettings.codeScale,
       setDraftThemeId,
       setDraftCodeScale,
+      applyDraft: applyUISettingsDraft,
+      resetDraft: resetUISettingsDraft,
       applyUISettingsDraft,
       resetUISettingsDraft,
     }),
