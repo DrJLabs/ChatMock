@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { SettingsPage } from "./SettingsPage";
@@ -16,16 +16,20 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: "UI" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Behavior" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "About" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "UI" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("UI shell content");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Behavior" }));
+    fireEvent.keyDown(screen.getByRole("tab", { name: "UI" }), { key: "ArrowRight" });
 
-    expect(await screen.findByText("Behavior shell content")).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Behavior", selected: true })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Behavior shell content");
 
-    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Behavior" }), { key: "ArrowRight" });
 
-    expect(await screen.findByText("About shell content")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "About" })).toHaveAttribute("aria-selected", "true");
+    });
+    expect(screen.getByRole("tab", { name: "About" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("About shell content");
   });
 });

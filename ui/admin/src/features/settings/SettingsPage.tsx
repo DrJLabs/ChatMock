@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 type SettingsPageProps = {
   uiSection: ReactNode;
   behaviorSection: ReactNode;
@@ -10,56 +12,35 @@ export function SettingsPage({ uiSection, behaviorSection, aboutSection }: Setti
   const [tab, setTab] = useState<"ui" | "behavior" | "about">("ui");
 
   return (
-    <div className="page-grid">
+    <Tabs className="page-grid" onValueChange={(value) => setTab(value as "ui" | "behavior" | "about")} value={tab}>
       <div className="mode-header-card">
         <div>
           <p className="eyebrow">Settings</p>
           <h2>Browser-local settings</h2>
           <p className="muted">This shell organizes settings into separate sections for later work.</p>
         </div>
-        <div aria-label="Settings sections" className="segmented-control" role="tablist">
-          <button
-            id="settings-ui-tab"
-            aria-selected={tab === "ui"}
-            className="segment-button"
-            onClick={() => setTab("ui")}
-            role="tab"
-            type="button"
-          >
+        <TabsList aria-label="Settings sections" className="segmented-control">
+          <TabsTrigger className="segment-button" value="ui">
             UI
-          </button>
-          <button
-            id="settings-behavior-tab"
-            aria-selected={tab === "behavior"}
-            className="segment-button"
-            onClick={() => setTab("behavior")}
-            role="tab"
-            type="button"
-          >
+          </TabsTrigger>
+          <TabsTrigger className="segment-button" value="behavior">
             Behavior
-          </button>
-          <button
-            id="settings-about-tab"
-            aria-selected={tab === "about"}
-            className="segment-button"
-            onClick={() => setTab("about")}
-            role="tab"
-            type="button"
-          >
+          </TabsTrigger>
+          <TabsTrigger className="segment-button" value="about">
             About
-          </button>
-        </div>
+          </TabsTrigger>
+        </TabsList>
       </div>
 
-      <section aria-labelledby="settings-ui-tab" hidden={tab !== "ui"} role="tabpanel">
+      <TabsContent value="ui">
         {uiSection}
-      </section>
-      <section aria-labelledby="settings-behavior-tab" hidden={tab !== "behavior"} role="tabpanel">
+      </TabsContent>
+      <TabsContent value="behavior">
         {behaviorSection}
-      </section>
-      <section aria-labelledby="settings-about-tab" hidden={tab !== "about"} role="tabpanel">
+      </TabsContent>
+      <TabsContent value="about">
         {aboutSection}
-      </section>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
