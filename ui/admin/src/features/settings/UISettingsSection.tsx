@@ -18,8 +18,8 @@ export function UISettingsSection() {
     isDirty,
     setDraftThemeId,
     setDraftCodeScale,
-    applyDraft,
-    resetDraft,
+    applyUISettingsDraft,
+    resetUISettingsDraft,
   } = useUISettings();
 
   return (
@@ -40,6 +40,9 @@ export function UISettingsSection() {
                   key={preset.id}
                   className={`theme-preset-card ${isActive ? "active" : ""} ${preset.previewClassName}`}
                   aria-label={preset.label}
+                  aria-pressed={isActive}
+                  data-active={isActive}
+                  data-applied={isApplied}
                   onClick={() => setDraftThemeId(preset.id)}
                   type="button"
                 >
@@ -81,10 +84,10 @@ export function UISettingsSection() {
         </SurfaceCardHeader>
         <SurfaceCardContent className="draft-actions">
           <p className="muted">{isDirty ? "Previewing changes" : "Applied settings are active."}</p>
-          <Button disabled={!isDirty} onClick={applyDraft} type="button">
+          <Button disabled={!isDirty} onClick={applyUISettingsDraft} type="button">
             Apply
           </Button>
-          <Button disabled={!isDirty} onClick={resetDraft} type="button" variant="outline">
+          <Button disabled={!isDirty} onClick={resetUISettingsDraft} type="button" variant="outline">
             Reset
           </Button>
         </SurfaceCardContent>
