@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAppliedUISettings, saveAppliedUISettings } from "./storage";
 import { THEME_PRESETS } from "./theme-presets";
-import { DEFAULT_UI_SETTINGS, THEME_IDS, UI_SETTINGS_STORAGE_KEY } from "./types";
+import { DEFAULT_UI_SETTINGS, THEME_IDS, UI_SETTINGS_STORAGE_KEY, type UISettings } from "./types";
 
 describe("UI settings storage", () => {
   beforeEach(() => {
@@ -66,7 +66,7 @@ describe("UI settings storage", () => {
   });
 
   it("round-trips valid settings through save and load", () => {
-    const next = { themeId: "obsidian", codeScale: 115 };
+    const next: UISettings = { themeId: "obsidian", codeScale: 115 };
 
     saveAppliedUISettings(next);
 
