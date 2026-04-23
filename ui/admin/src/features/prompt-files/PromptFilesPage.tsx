@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -39,11 +39,16 @@ export function PromptFilesPage({
 }: PromptFilesPageProps) {
   const [selectedProfileId, setSelectedProfileId] = useState<string>(profiles[0]?.id ?? "");
   const [promptFiles, setPromptFiles] = useState<PromptFilePayload | null>(null);
+  const loadPromptFilesRef = useRef(onLoadPromptFiles);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null,
     [profiles, selectedProfileId],
   );
+
+  useEffect(() => {
+    loadPromptFilesRef.current = onLoadPromptFiles;
+  }, [onLoadPromptFiles]);
 
   useEffect(() => {
     if (selectedProfile == null) {
@@ -53,7 +58,7 @@ export function PromptFilesPage({
     let active = true;
     void (async () => {
       try {
-        const payload = await onLoadPromptFiles({
+        const payload = await loadPromptFilesRef.current({
           base_prompt_path: selectedProfile.base_prompt_path,
           codex_prompt_path: selectedProfile.codex_prompt_path,
         });
@@ -69,7 +74,7 @@ export function PromptFilesPage({
     return () => {
       active = false;
     };
-  }, [onLoadPromptFiles, selectedProfile]);
+  }, [selectedProfile]);
 
   if (selectedProfile == null) {
     return (
