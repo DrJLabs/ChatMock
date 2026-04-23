@@ -48,6 +48,13 @@ def _read_prompt_text(path: Path) -> str:
     return content
 
 
+def write_prompt_text(path: Path, text: str) -> None:
+    if not isinstance(text, str):
+        raise ValueError(f"Prompt file {path} content must be a string")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def _resolve_static_prompt_config() -> dict[str, str | None]:
     explicit_prompt_dir = os.getenv("CHATMOCK_PROMPT_DIR") or os.getenv("CHATGPT_LOCAL_PROMPT_DIR")
     explicit_base = os.getenv("CHATMOCK_PROMPT_BASE_PATH") or os.getenv("CHATGPT_LOCAL_PROMPT_BASE_PATH")
@@ -273,6 +280,8 @@ class PromptManager:
             "prompt_dir": state.prompt_dir,
             "base_prompt_path": state.base_prompt_path,
             "codex_prompt_path": state.codex_prompt_path,
+            "base_prompt_text": self.get_base_instructions(),
+            "codex_prompt_text": self.get_codex_instructions(),
             "loaded_at": state.loaded_at,
             "prompt_config_path": str(self._config_path),
         }

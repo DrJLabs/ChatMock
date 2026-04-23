@@ -123,18 +123,16 @@ def _normalize_instance(data: dict[str, Any], *, known_profile_ids: set[str]) ->
     }
 
 
-def load_instances(config_root: Path | str, *, known_profile_ids: set[str]) -> list[dict[str, Any]]:
-    config_root_path = Path(config_root)
-    if not config_root_path.exists() or not config_root_path.is_dir():
-        raise FileNotFoundError(f"Instance config directory not found: {config_root_path}")
-
-    instances: list[dict[str, Any]] = []
+def validate_instances_data(instances: list[dict[str, Any]], *, known_profile_ids: set[str]) -> list[dict[str, Any]]:
+    normalized_instances: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_services: set[str] = set()
     seen_containers: set[str] = set()
     seen_targets: set[tuple[str, int]] = set()
-    for path in sorted(config_root_path.glob("*.yaml")):
-        instance = _normalize_instance(_load_yaml_object(path), known_profile_ids=known_profile_ids)
+    for item in instances:
+        if not isinstance(item, dict):
+            raise ValueError("Instance draft entries must be mappings")
+        instance = _normalize_instance(item, known_profile_ids=known_profile_ids)
         instance_id = instance["id"]
         service_name = instance["compose_service_name"]
         container_name = instance["container_name"]
@@ -151,5 +149,40 @@ def load_instances(config_root: Path | str, *, known_profile_ids: set[str]) -> l
         seen_services.add(service_name)
         seen_containers.add(container_name)
         seen_targets.add(bind_target)
-        instances.append(instance)
-    return sorted(instances, key=lambda item: (item["ui"]["order"], item["id"]))
+        normalized_instances.append(instance)
+    return sorted(normalized_instances, key=lambda item: (item["ui"]["order"], item["id"]))
+
+
+def serialize_instance_config(instance: dict[str, Any]) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": instance["id"],
+        "label": instance["label"],
+        "profile_id": instance["profile_id"],
+        "bind_host": instance["bind_host"],
+        "port": instance["port"],
+        "runtime": instance["runtime"],
+        "prompt_config_path": instance["prompt_config_path"],
+        "state_group": instance["state_group"],
+        "compose_service_name": instance["compose_service_name"],
+        "container_name": instance["container_name"],
+        "env_overrides": dict(instance["env_overrides"]),
+        "healthcheck": dict(instance["healthcheck"]),
+        "ui": {
+            "order": instance["ui"]["order"],
+            "mutable_fields": list(instance["ui"]["mutable_fields"]),
+        },
+        "enabled": instance["enabled"],
+    }
+    env_prefix = instance.get("env_prefix")
+    if isinstance(env_prefix, str) and env_prefix.strip():
+        data["env_prefix"] = env_prefix
+    return data
+
+
+def load_instances(config_root: Path | str, *, known_profile_ids: set[str]) -> list[dict[str, Any]]:
+    config_root_path = Path(config_root)
+    if not config_root_path.exists() or not config_root_path.is_dir():
+        raise FileNotFoundError(f"Instance config directory not found: {config_root_path}")
+
+    raw_instances = [_load_yaml_object(path) for path in sorted(config_root_path.glob("*.yaml"))]
+    return validate_instances_data(raw_instances, known_profile_ids=known_profile_ids)

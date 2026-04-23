@@ -129,6 +129,8 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(body["prompt_dir"], str(prompt_dir))
             self.assertEqual(body["base_prompt_path"], str(prompt_dir / "prompt.md"))
             self.assertEqual(body["codex_prompt_path"], str(prompt_dir / "prompt_gpt5_codex.md"))
+            self.assertEqual(body["base_prompt_text"], "bare base")
+            self.assertEqual(body["codex_prompt_text"], "bare codex")
 
     @patch("chatmock.routes_openai.start_upstream_request")
     def test_admin_prompts_reload_refreshes_cached_prompt_contents(self, mock_start) -> None:

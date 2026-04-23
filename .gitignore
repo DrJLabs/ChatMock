@@ -12,6 +12,8 @@ venv/
 # Packaging artifacts
 build/
 dist/
+node_modules/
+*.tsbuildinfo
 *.egg-info/
 
 # Tool caches
