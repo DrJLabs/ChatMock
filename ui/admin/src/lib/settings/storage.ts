@@ -49,7 +49,13 @@ export function normalizeUISettings(value: unknown): UISettings {
 }
 
 export function loadAppliedUISettings(): UISettings {
-  const raw = window.localStorage.getItem(UI_SETTINGS_STORAGE_KEY);
+  let raw: string | null = null;
+
+  try {
+    raw = window.localStorage.getItem(UI_SETTINGS_STORAGE_KEY);
+  } catch {
+    return DEFAULT_UI_SETTINGS;
+  }
 
   if (!raw) {
     return DEFAULT_UI_SETTINGS;
@@ -63,5 +69,11 @@ export function loadAppliedUISettings(): UISettings {
 }
 
 export function saveAppliedUISettings(settings: UISettings): void {
-  window.localStorage.setItem(UI_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  const next = normalizeUISettings(settings);
+
+  try {
+    window.localStorage.setItem(UI_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage failures in browser-local settings.
+  }
 }
