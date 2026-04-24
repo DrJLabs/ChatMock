@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from chatmock.app import create_app
+from chatmock.app import _discover_default_gateway_ips, create_app
 from chatmock.config import write_prompt_texts_atomically
 
 
@@ -136,6 +136,19 @@ def test_admin_ui_index_serves_built_assets(tmp_path: Path):
     assert b"ChatMock Admin" in response.data
 
 
+def test_admin_ui_index_accepts_path_override(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Path Override</h1>")
+    app = create_app(admin_ui_dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/admin/ui")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Path Override" in response.data
+
+
 def test_admin_ui_unknown_path_falls_back_to_index(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     _write_admin_index(dist_dir, "<h1>Instances</h1>")
@@ -183,6 +196,42 @@ def test_admin_ui_trailing_slash_serves_index(tmp_path: Path):
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     assert b"Trailing Slash" in response.data
+
+
+def test_admin_ui_uses_env_configured_dist_dir(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    _write_admin_index(dist_dir, "<h1>Env Configured</h1>")
+    with patch.dict(
+        "os.environ",
+        {
+            "CHATMOCK_ADMIN_UI_DIST_DIR": str(dist_dir),
+            "CHATMOCK_ADMIN_TOKEN": "",
+            "CHATGPT_LOCAL_ADMIN_TOKEN": "",
+        },
+        clear=False,
+    ):
+        app = create_app()
+    client = app.test_client()
+
+    response = client.get("/admin/ui")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert b"Env Configured" in response.data
+
+
+def test_discover_default_gateway_ips_requires_gateway_and_up_flags():
+    route_text = "\n".join(
+        [
+            "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
+            "eth0\t00000000\t010011AC\t0002\t0\t0\t0\t00000000\t0\t0\t0",
+            "eth1\t00000000\t020011AC\t0003\t0\t0\t0\t00000000\t0\t0\t0",
+            "eth2\t00000000\t030011AC\t0001\t0\t0\t0\t00000000\t0\t0\t0",
+        ]
+    )
+
+    with patch("chatmock.app.Path.read_text", return_value=route_text):
+        assert _discover_default_gateway_ips() == {"172.17.0.2"}
 
 
 def test_get_draft_returns_current_state(tmp_path: Path):

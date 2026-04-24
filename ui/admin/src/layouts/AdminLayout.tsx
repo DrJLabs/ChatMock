@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Current State", end: true },
   { to: "/edit-config", label: "Edit Config" },
   { to: "/prompt-files", label: "Prompt Files" },
+  { to: "/settings", label: "Settings" },
 ];
 
 export function AdminLayout() {

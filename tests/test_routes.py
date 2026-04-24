@@ -256,6 +256,59 @@ class RouteTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
 
+    @patch("chatmock.app._discover_default_gateway_ips", return_value={"172.21.0.1"})
+    @patch.dict(
+        "os.environ",
+        {
+            "CHATMOCK_ADMIN_TOKEN": "",
+            "CHATGPT_LOCAL_ADMIN_TOKEN": "",
+            "CHATMOCK_ALLOW_ADMIN_EXTERNAL": "false",
+            "CHATMOCK_ADMIN_TRUSTED_IPS": "",
+        },
+        clear=False,
+    )
+    def test_admin_prompts_allows_detected_default_gateway(self, _mock_gateway) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            app = create_app(
+                prompt_dir=str(prompt_dir),
+                prompt_config_path=str(root / "prompt-config-chatmock.json"),
+            )
+            client = app.test_client()
+
+            response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "172.21.0.1"})
+
+            self.assertEqual(response.status_code, 200)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "CHATMOCK_ADMIN_TOKEN": "",
+            "CHATGPT_LOCAL_ADMIN_TOKEN": "",
+            "CHATMOCK_ALLOW_ADMIN_EXTERNAL": "false",
+            "CHATMOCK_ADMIN_TRUSTED_IPS": "",
+        },
+        clear=False,
+    )
+    def test_admin_gateway_addresses_are_cached_at_app_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt_dir = self._write_prompt_set(root, "bare", "bare base", "bare codex")
+            with patch("chatmock.app._discover_default_gateway_ips", return_value={"172.21.0.1"}) as mock_gateway:
+                app = create_app(
+                    prompt_dir=str(prompt_dir),
+                    prompt_config_path=str(root / "prompt-config-chatmock.json"),
+                )
+
+                self.assertEqual(mock_gateway.call_count, 1)
+
+                client = app.test_client()
+                response = client.get("/admin/prompts", environ_overrides={"REMOTE_ADDR": "172.21.0.1"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(mock_gateway.call_count, 1)
+
     @patch.dict("os.environ", {"CHATMOCK_ALLOW_ADMIN_EXTERNAL": "true"})
     def test_admin_prompts_external_access_requires_token(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

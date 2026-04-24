@@ -48,7 +48,7 @@ If `CHATMOCK_ADMIN_TOKEN` is configured, include the header:
 By default the admin endpoints only accept:
 
 - loopback clients
-- known Docker host gateway addresses such as `172.17.0.1` and `172.18.0.1`
+- the container's auto-discovered IPv4 default gateway addresses parsed from `/proc/net/route` at startup
 
 If your Docker/network setup uses a different host address, set:
 
@@ -63,6 +63,8 @@ For non-standard container networks, you can also trust specific admin IPs or CI
 ```bash
 CHATMOCK_ADMIN_TRUSTED_IPS=172.17.0.1,10.0.0.0/8
 ```
+
+IPv6 gateways are not auto-trusted. Use `CHATMOCK_ADMIN_TRUSTED_IPS` for IPv6 addresses or CIDR ranges.
 
 Example: switch the main service to the ClawMem prompt directory without restarting the container:
 
@@ -157,6 +159,19 @@ npm run build
 That emits static assets to:
 
 - `ui/admin/dist/`
+
+The container image also builds and ships these assets during `docker build`.
+At runtime the Flask app uses:
+
+- `CHATMOCK_ADMIN_UI_DIST_DIR=/app/ui/admin/dist`
+
+unless an explicit `admin_ui_dist_dir` or env override is provided.
+
+The runtime image now switches to the non-root `chatmock` user. Named Docker volumes preserve the in-image `/data` ownership, but a host bind mount will override it with the host directory's UID/GID. If you bind-mount `/data`, make sure the host path is writable by the container user, use a Compose `user:` override, or fix host ownership first:
+
+```bash
+sudo chown -R <container-uid>:<container-gid> /path/to/your/chatmock-data
+```
 
 Flask serves the built SPA at:
 

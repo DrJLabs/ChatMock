@@ -4,45 +4,152 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
+:root,
+:root[data-theme="obsidian"] {
   --admin-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
-  --background: #eef3f9;
-  --foreground: #132238;
-  --card: rgb(251 252 254 / 0.92);
-  --card-foreground: #132238;
-  --muted: #e6eef8;
-  --muted-foreground: #5f738d;
-  --border: rgb(19 34 56 / 0.12);
-  --input: rgb(19 34 56 / 0.14);
-  --primary: #132238;
-  --primary-foreground: #f6f8fb;
-  --secondary: #e7eef7;
-  --secondary-foreground: #132238;
-  --destructive: #fee2e2;
-  --destructive-foreground: #8b1e1e;
+  --admin-code-scale: 100;
+  --background: #0a0d11;
+  --foreground: #edf1f7;
+  --card: rgb(18 22 28 / 0.94);
+  --card-foreground: #edf1f7;
+  --muted: #161b22;
+  --muted-foreground: #9ca7b7;
+  --border: rgb(237 241 247 / 0.12);
+  --input: rgb(237 241 247 / 0.16);
+  --primary: #d5dde8;
+  --primary-foreground: #0a0d11;
+  --secondary: #1b2129;
+  --secondary-foreground: #edf1f7;
+  --destructive: #f4a7a7;
+  --destructive-foreground: #2b0d0d;
+  --accent: #1b2129;
+  --accent-foreground: #f7f9fc;
+  --popover: rgb(13 16 21 / 0.98);
+  --popover-foreground: #edf1f7;
+  --ring: rgb(213 221 232 / 0.38);
+  --chart-1: #d5dde8;
+  --chart-2: #7b8798;
+  --chart-3: #5c6674;
+  --chart-4: #3a414d;
+  --chart-5: #262c35;
   --radius-card: 1.4rem;
   --radius-pill: 999px;
-  --shadow-panel: 0 20px 48px -28px rgba(19, 34, 56, 0.28);
-  --shadow-soft: 0 14px 32px -26px rgba(19, 34, 56, 0.24);
-  --popover: rgb(252 253 255 / 0.98);
-  --popover-foreground: #132238;
-  --accent: #f3f7fb;
-  --accent-foreground: #132238;
-  --ring: rgb(19 34 56 / 0.28);
-  --chart-1: #132238;
-  --chart-2: #2a4d79;
-  --chart-3: #6480a0;
-  --chart-4: #9fb3cb;
-  --chart-5: #d8e1ee;
   --radius: 0.75rem;
-  --sidebar: rgb(251 252 254 / 0.94);
-  --sidebar-foreground: #132238;
-  --sidebar-primary: #132238;
-  --sidebar-primary-foreground: #f6f8fb;
-  --sidebar-accent: #f3f7fb;
-  --sidebar-accent-foreground: #132238;
-  --sidebar-border: rgb(19 34 56 / 0.12);
-  --sidebar-ring: rgb(19 34 56 / 0.28);
+  --shadow-panel: 0 20px 48px -28px rgba(2, 8, 19, 0.64);
+  --shadow-soft: 0 14px 32px -26px rgba(2, 8, 19, 0.5);
+  --sidebar: rgb(12 15 19 / 0.95);
+  --sidebar-foreground: #edf1f7;
+  --sidebar-primary: #d5dde8;
+  --sidebar-primary-foreground: #0a0d11;
+  --sidebar-accent: #1b2129;
+  --sidebar-accent-foreground: #f7f9fc;
+  --sidebar-border: rgb(237 241 247 / 0.12);
+  --sidebar-ring: rgb(213 221 232 / 0.38);
+}
+
+:root[data-theme="midnight"] {
+  --background: #03111d;
+  --foreground: #e6f6ff;
+  --card: rgb(6 24 40 / 0.95);
+  --card-foreground: #e6f6ff;
+  --muted: #082031;
+  --muted-foreground: #95b9cf;
+  --border: rgb(105 216 255 / 0.18);
+  --input: rgb(105 216 255 / 0.22);
+  --primary: #5fe1ff;
+  --primary-foreground: #03111d;
+  --secondary: #0b263a;
+  --secondary-foreground: #eaf3ff;
+  --destructive: #ff9baf;
+  --destructive-foreground: #2a0710;
+  --accent: #0f2940;
+  --accent-foreground: #f4fbff;
+  --popover: rgb(5 21 34 / 0.98);
+  --popover-foreground: #eaf3ff;
+  --ring: rgb(95 225 255 / 0.42);
+  --chart-1: #5fe1ff;
+  --chart-2: #00a8d6;
+  --chart-3: #00739a;
+  --chart-4: #0a4157;
+  --chart-5: #072634;
+  --sidebar: rgb(4 17 27 / 0.96);
+  --sidebar-foreground: #e6f6ff;
+  --sidebar-primary: #5fe1ff;
+  --sidebar-primary-foreground: #03111d;
+  --sidebar-accent: #0f2940;
+  --sidebar-accent-foreground: #f4fbff;
+  --sidebar-border: rgb(105 216 255 / 0.16);
+  --sidebar-ring: rgb(95 225 255 / 0.42);
+}
+
+:root[data-theme="blueprint"] {
+  --background: #0b1630;
+  --foreground: #eef4ff;
+  --card: rgb(18 31 57 / 0.96);
+  --card-foreground: #eef4ff;
+  --muted: #142544;
+  --muted-foreground: #adc0dd;
+  --border: rgb(117 153 255 / 0.18);
+  --input: rgb(117 153 255 / 0.24);
+  --primary: #4f7cff;
+  --primary-foreground: #edf3ff;
+  --secondary: #1a2c54;
+  --secondary-foreground: #eef4ff;
+  --destructive: #ffb0bf;
+  --destructive-foreground: #2c0d16;
+  --accent: #1f3360;
+  --accent-foreground: #f7fbff;
+  --popover: rgb(15 28 52 / 0.98);
+  --popover-foreground: #eef4ff;
+  --ring: rgb(79 124 255 / 0.45);
+  --chart-1: #4f7cff;
+  --chart-2: #305be0;
+  --chart-3: #2343a8;
+  --chart-4: #1b3277;
+  --chart-5: #12214e;
+  --sidebar: rgb(12 22 42 / 0.96);
+  --sidebar-foreground: #eef4ff;
+  --sidebar-primary: #4f7cff;
+  --sidebar-primary-foreground: #edf3ff;
+  --sidebar-accent: #1f3360;
+  --sidebar-accent-foreground: #f7fbff;
+  --sidebar-border: rgb(117 153 255 / 0.18);
+  --sidebar-ring: rgb(79 124 255 / 0.45);
+}
+
+:root[data-theme="high-contrast"] {
+  --background: #050608;
+  --foreground: #f7fafc;
+  --card: rgb(10 12 16 / 0.98);
+  --card-foreground: #f7fafc;
+  --muted: #111318;
+  --muted-foreground: #c4ced9;
+  --border: rgb(247 250 252 / 0.22);
+  --input: rgb(247 250 252 / 0.28);
+  --primary: #ffffff;
+  --primary-foreground: #050608;
+  --secondary: #12151a;
+  --secondary-foreground: #f7fafc;
+  --destructive: #ffccd4;
+  --destructive-foreground: #24060c;
+  --accent: #12151a;
+  --accent-foreground: #ffffff;
+  --popover: rgb(7 9 12 / 0.98);
+  --popover-foreground: #f7fafc;
+  --ring: rgb(255 255 255 / 0.46);
+  --chart-1: #ffffff;
+  --chart-2: #d7dde6;
+  --chart-3: #8a95a6;
+  --chart-4: #4a5260;
+  --chart-5: #222730;
+  --sidebar: rgb(7 9 12 / 0.96);
+  --sidebar-foreground: #f7fafc;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #050608;
+  --sidebar-accent: #12151a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(247 250 252 / 0.22);
+  --sidebar-ring: rgb(255 255 255 / 0.46);
 }
 
 @theme inline {
@@ -96,16 +203,22 @@
   }
 
   html {
-    color-scheme: light;
+    color-scheme: dark;
     @apply font-sans;
   }
 
   body {
     @apply m-0 min-h-screen min-w-80 font-sans antialiased bg-background text-foreground;
+
     background-image:
-      radial-gradient(circle at top left, rgba(19, 34, 56, 0.12), transparent 34%),
-      radial-gradient(circle at bottom right, rgba(95, 115, 141, 0.1), transparent 28%),
-      linear-gradient(180deg, #f6f8fb 0%, #eef3f9 55%, #e6edf6 100%);
+      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 18%, transparent), transparent 30%),
+      radial-gradient(circle at bottom right, color-mix(in srgb, var(--chart-2) 16%, transparent), transparent 30%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--background) 78%, black) 0%,
+        var(--background) 55%,
+        color-mix(in srgb, var(--background) 62%, black) 100%
+      );
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -125,6 +238,8 @@
 
   code {
     @apply block rounded-2xl bg-muted px-3 py-2 text-sm text-primary;
+
+    line-height: 1.65;
     overflow-wrap: anywhere;
   }
 
@@ -140,7 +255,8 @@
   button:focus-visible,
   a:focus-visible,
   summary:focus-visible {
-    @apply ring-2 ring-primary/25 ring-offset-2 ring-offset-white;
+    @apply ring-2 ring-primary/25 ring-offset-2;
+    --tw-ring-offset-color: var(--background);
   }
 }
 
@@ -161,7 +277,12 @@
   .mode-header-card,
   .stat-card {
     border: 1px solid var(--border);
-    background: linear-gradient(180deg, rgba(251, 252, 254, 0.92) 0%, rgba(247, 250, 253, 0.9) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 92%, white 8%) 0%,
+      color-mix(in srgb, var(--background) 88%, black 12%) 100%
+    );
     box-shadow: var(--shadow-panel);
     backdrop-filter: blur(14px);
   }
@@ -188,8 +309,13 @@
 
   .status-banner {
     @apply min-w-[240px] rounded-[1.2rem] px-4 py-4 text-primary-foreground;
-    background:
-      linear-gradient(160deg, rgba(15, 35, 63, 0.98) 0%, rgba(19, 34, 56, 0.94) 72%, rgba(34, 67, 110, 0.92) 100%);
+
+    background: linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--primary) 86%, var(--background) 14%) 0%,
+      color-mix(in srgb, var(--primary) 48%, var(--background) 52%) 72%,
+      color-mix(in srgb, var(--chart-2) 72%, var(--background) 28%) 100%
+    );
     box-shadow: var(--shadow-soft);
   }
 
@@ -212,17 +338,22 @@
 
   .nav-button {
     @apply block w-full rounded-[1rem] px-4 py-3 text-left font-semibold no-underline transition-all duration-150;
+
     color: color-mix(in srgb, var(--muted-foreground) 86%, var(--primary));
   }
 
   .nav-button:hover {
-    @apply bg-white/70 text-foreground;
+    @apply bg-white/10 text-foreground;
   }
 
   .nav-button.active {
     @apply text-primary-foreground;
-    background:
-      linear-gradient(180deg, rgba(15, 35, 63, 0.98) 0%, rgba(19, 34, 56, 0.96) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
+      color-mix(in srgb, var(--chart-2) 78%, var(--background) 22%) 100%
+    );
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--shadow-soft);
   }
 
@@ -261,10 +392,15 @@
   .mode-header-card {
     @apply flex items-start justify-between gap-4;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(145deg, rgba(18, 34, 58, 0.98) 0%, rgba(22, 49, 86, 0.94) 100%);
+
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 22%, transparent) 0%,
+      color-mix(in srgb, var(--background) 90%, black 10%) 100%
+    );
     box-shadow: var(--shadow-panel);
-    color: var(--primary-foreground);
+
+    color: var(--foreground);
   }
 
   .current-state-hero .eyebrow,
@@ -298,8 +434,12 @@
 
   .primary-button {
     @apply text-primary-foreground;
-    background:
-      linear-gradient(180deg, rgba(15, 35, 63, 0.98) 0%, rgba(19, 34, 56, 0.96) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
+      color-mix(in srgb, var(--chart-2) 78%, var(--background) 22%) 100%
+    );
     box-shadow: var(--shadow-soft);
   }
 
@@ -312,7 +452,7 @@
   }
 
   .secondary-button:hover:not(:disabled) {
-    @apply bg-white;
+    @apply bg-white/10;
   }
 
   .danger-button {
@@ -333,7 +473,67 @@
   }
 
   .segment-button.active {
-    @apply bg-white text-foreground;
+    @apply bg-white;
+    color: color-mix(in srgb, var(--background) 92%, black 8%);
+  }
+
+  .theme-preset-card {
+    @apply grid gap-2 rounded-[1rem] border px-4 py-4 text-left transition-all duration-150;
+    border-color: color-mix(in srgb, var(--border) 88%, transparent);
+
+    background:
+      linear-gradient(180deg, rgba(12, 23, 37, 0.96) 0%, rgba(8, 16, 28, 0.97) 100%);
+
+    color: var(--foreground);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .theme-preset-card:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  }
+
+  .theme-preset-card[data-active="true"] {
+    box-shadow: var(--shadow-soft);
+    outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+    outline-offset: 0;
+  }
+
+  .theme-preset-card[data-applied="true"] {
+    border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+  }
+
+  .theme-preset-card strong {
+    @apply text-base;
+  }
+
+  .theme-preset-card span {
+    color: color-mix(in srgb, var(--muted-foreground) 90%, var(--foreground));
+  }
+
+  .theme-preset-card em {
+    @apply not-italic text-[0.72rem] uppercase tracking-[0.14em];
+    color: var(--primary);
+  }
+
+  .theme-preset-card.theme-obsidian {
+    background:
+      linear-gradient(180deg, rgba(10, 18, 29, 0.98) 0%, rgba(7, 13, 22, 0.98) 100%);
+  }
+
+  .theme-preset-card.theme-midnight {
+    background:
+      linear-gradient(180deg, rgba(9, 23, 39, 0.98) 0%, rgba(7, 18, 31, 0.98) 100%);
+  }
+
+  .theme-preset-card.theme-blueprint {
+    background:
+      linear-gradient(180deg, rgba(10, 25, 41, 0.98) 0%, rgba(8, 20, 33, 0.98) 100%);
+  }
+
+  .theme-preset-card.theme-high-contrast {
+    background:
+      linear-gradient(180deg, rgba(8, 10, 14, 0.98) 0%, rgba(5, 7, 10, 0.99) 100%);
   }
 
   .eyebrow {
@@ -403,13 +603,22 @@
 
   .list-item {
     @apply grid gap-1 rounded-[1rem] border border-transparent px-4 py-4 text-left;
-    background: linear-gradient(180deg, rgba(245, 248, 251, 0.96) 0%, rgba(238, 244, 249, 0.96) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 90%, white 10%) 0%,
+      color-mix(in srgb, var(--background) 86%, black 14%) 100%
+    );
   }
 
   .list-item.active {
     @apply border-white/10 text-primary-foreground;
-    background:
-      linear-gradient(180deg, rgba(19, 34, 56, 0.98) 0%, rgba(30, 61, 104, 0.94) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 92%, var(--background) 8%) 0%,
+      color-mix(in srgb, var(--chart-2) 78%, var(--background) 22%) 100%
+    );
     box-shadow: var(--shadow-soft);
   }
 
@@ -431,6 +640,7 @@
   .form-grid label span,
   .picker-field span {
     @apply text-sm;
+
     color: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
   }
 
@@ -439,7 +649,9 @@
   .form-grid select,
   .picker-field select,
   .prompt-textarea {
-    @apply w-full rounded-[1rem] border bg-white/88 px-4 py-3;
+    @apply w-full rounded-[1rem] border px-4 py-3 text-foreground;
+
+    background: color-mix(in srgb, var(--background) 84%, black 16%);
     border-color: var(--input);
   }
 
@@ -463,17 +675,28 @@
   .preview-card {
     @apply grid gap-2 rounded-[1rem] border px-4 py-4;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
-    background: linear-gradient(180deg, rgba(247, 250, 255, 0.92) 0%, rgba(241, 246, 252, 0.96) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 92%, white 8%) 0%,
+      color-mix(in srgb, var(--background) 90%, black 10%) 100%
+    );
   }
 
   .advanced-card {
     @apply mt-4 rounded-[1rem] border px-4 py-4;
     border-color: color-mix(in srgb, var(--border) 88%, transparent);
-    background: linear-gradient(180deg, rgba(247, 249, 252, 0.96) 0%, rgba(241, 246, 252, 0.96) 100%);
+
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card) 92%, white 8%) 0%,
+      color-mix(in srgb, var(--background) 90%, black 10%) 100%
+    );
   }
 
   .advanced-card summary {
     @apply font-semibold;
+
     color: color-mix(in srgb, var(--primary) 78%, var(--muted-foreground));
   }
 
@@ -487,6 +710,19 @@
 
   .prompt-textarea {
     @apply min-h-96 leading-relaxed;
+  }
+
+  .technical-text,
+  .prompt-textarea,
+  .preview-card code,
+  .advanced-card code {
+    font-size: calc(0.95rem * (var(--admin-code-scale) / 100));
+  }
+
+  .technical-text,
+  .preview-card code,
+  .advanced-card code {
+    line-height: 1.65;
   }
 }
 

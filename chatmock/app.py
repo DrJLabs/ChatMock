@@ -18,6 +18,33 @@ from .routes_ollama import ollama_bp
 from .websocket_routes import register_websocket_routes
 
 
+def _discover_default_gateway_ips() -> set[str]:
+    route_path = Path("/proc/net/route")
+    try:
+        lines = route_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+
+    gateways: set[str] = set()
+    for line in lines[1:]:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        destination, gateway, flags = fields[1], fields[2], fields[3]
+        try:
+            flag_bits = int(flags, 16)
+            if destination != "00000000" or (flag_bits & 0x3) != 0x3:
+                continue
+            gateway_bytes = bytes.fromhex(gateway)
+            if len(gateway_bytes) != 4:
+                continue
+            gateway_ip = ipaddress.IPv4Address(int.from_bytes(gateway_bytes, "little"))
+        except ValueError:
+            continue
+        gateways.add(str(gateway_ip))
+    return gateways
+
+
 def create_app(
     verbose: bool = False,
     verbose_obfuscation: bool = False,
@@ -32,7 +59,7 @@ def create_app(
     prompt_dir: str | None = None,
     prompt_config_path: str | None = None,
     admin_token: str | None = None,
-    admin_ui_dist_dir: str | None = None,
+    admin_ui_dist_dir: str | Path | None = None,
     repo_root: str | None = None,
     profiles_root: str | None = None,
     instances_root: str | None = None,
@@ -40,6 +67,13 @@ def create_app(
 ) -> Flask:
     app = Flask(__name__)
     repo_root_path = Path(repo_root) if isinstance(repo_root, str) and repo_root else None
+    allowed_gateway_addresses = _discover_default_gateway_ips()
+    if isinstance(admin_ui_dist_dir, Path) and str(admin_ui_dist_dir).strip():
+        configured_admin_ui_dist_dir: str | Path | None = admin_ui_dist_dir
+    elif isinstance(admin_ui_dist_dir, str) and admin_ui_dist_dir.strip():
+        configured_admin_ui_dist_dir = admin_ui_dist_dir
+    else:
+        configured_admin_ui_dist_dir = os.getenv("CHATMOCK_ADMIN_UI_DIST_DIR") or None
     prompt_manager = get_prompt_manager(
         prompt_dir=prompt_dir,
         prompt_config_path=prompt_config_path,
@@ -60,7 +94,8 @@ def create_app(
         PROMPT_MANAGER=prompt_manager,
         INSTANCE_SERVICE=None,
         DRAFT_SERVICE=None,
-        ADMIN_UI_DIST_DIR=admin_ui_dist_dir,
+        ADMIN_UI_DIST_DIR=configured_admin_ui_dist_dir,
+        ALLOWED_GATEWAY_ADDRESSES=allowed_gateway_addresses,
         REPO_ROOT=repo_root_path,
         PROFILES_ROOT=profiles_root,
         INSTANCES_ROOT=instances_root,
@@ -81,7 +116,7 @@ def create_app(
         remote_addr = request.remote_addr
         allow_admin_external = os.getenv("CHATMOCK_ALLOW_ADMIN_EXTERNAL", "false").lower() == "true"
         allowed_local_addresses = {"127.0.0.1", "::1"}
-        allowed_bridge_addresses = {"172.17.0.1", "172.18.0.1"}
+        allowed_gateway_addresses = app.config.get("ALLOWED_GATEWAY_ADDRESSES") or set()
         trusted_remote_spec = os.getenv("CHATMOCK_ADMIN_TRUSTED_IPS", "").strip()
 
         def _is_in_trusted_ranges(value: str | None) -> bool:
@@ -104,10 +139,10 @@ def create_app(
                     continue
             return False
 
-        is_allowed_bridge = isinstance(remote_addr, str) and remote_addr in allowed_bridge_addresses
+        is_allowed_gateway = isinstance(remote_addr, str) and remote_addr in allowed_gateway_addresses
         is_local = isinstance(remote_addr, str) and remote_addr in allowed_local_addresses
         is_trusted_remote = _is_in_trusted_ranges(remote_addr)
-        if not (is_local or is_allowed_bridge or is_trusted_remote or allow_admin_external):
+        if not (is_local or is_allowed_gateway or is_trusted_remote or allow_admin_external):
             return jsonify({"error": {"message": "Admin routes are local-only"}}), 403
         expected_token = app.config.get("ADMIN_TOKEN")
         provided_token = (
@@ -115,7 +150,7 @@ def create_app(
             or request.headers.get("X-Admin-Token")
             or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         )
-        if allow_admin_external and not (is_local or is_allowed_bridge or is_trusted_remote):
+        if allow_admin_external and not (is_local or is_allowed_gateway or is_trusted_remote):
             if not (isinstance(expected_token, str) and expected_token):
                 return jsonify({"error": {"message": "External admin access requires CHATMOCK_ADMIN_TOKEN"}}), 403
         if isinstance(expected_token, str) and expected_token:
