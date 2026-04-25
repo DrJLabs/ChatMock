@@ -893,6 +893,52 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(body["output_text"], "filled")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_appends_done_only_output_text_segments(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_done_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.done", "text": "first "},
+                    {"type": "response.output_text.done", "text": "second"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_done_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "first second")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "first second"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()

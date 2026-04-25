@@ -503,6 +503,7 @@ def aggregate_response_from_sse(
     error_obj: Dict[str, Any] | None = None
     output_items: List[Dict[str, Any]] = []
     output_text_parts: List[str] = []
+    saw_output_text_delta = False
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
             if callable(on_event):
@@ -517,10 +518,11 @@ def aggregate_response_from_sse(
             if kind == "response.output_text.delta":
                 delta = evt.get("delta")
                 if isinstance(delta, str) and delta:
+                    saw_output_text_delta = True
                     output_text_parts.append(delta)
             elif kind == "response.output_text.done":
                 text = evt.get("text")
-                if isinstance(text, str) and text and not output_text_parts:
+                if isinstance(text, str) and text and not saw_output_text_delta:
                     output_text_parts.append(text)
             elif kind == "response.output_item.done":
                 item = evt.get("item")
