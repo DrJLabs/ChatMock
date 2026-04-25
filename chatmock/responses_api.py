@@ -512,7 +512,7 @@ def aggregate_response_from_sse(
                     pass
             response = evt.get("response")
             if isinstance(response, dict):
-                response_obj = copy.deepcopy(response)
+                response_obj = response
             kind = evt.get("type")
             if kind == "response.output_text.delta":
                 delta = evt.get("delta")
@@ -557,7 +557,7 @@ def _populate_response_output_from_stream(
 
     if not has_output:
         if output_items:
-            populated["output"] = copy.deepcopy(output_items)
+            populated["output"] = list(output_items)
             has_output = True
         elif output_text:
             populated["output"] = [
@@ -569,9 +569,9 @@ def _populate_response_output_from_stream(
             ]
             has_output = True
 
-    if output_text and not isinstance(populated.get("output_text"), str):
+    if output_text and not populated.get("output_text"):
         populated["output_text"] = output_text
-    elif has_output and not isinstance(populated.get("output_text"), str):
+    elif has_output and not populated.get("output_text"):
         text_from_items = _response_output_text(populated.get("output"))
         if text_from_items:
             populated["output_text"] = text_from_items
