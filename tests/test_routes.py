@@ -810,6 +810,54 @@ class RouteTests(unittest.TestCase):
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_populates_output_from_stream_text_when_completed_output_empty(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.output_text.delta", "delta": " world"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                            "usage": {"input_tokens": 4, "output_tokens": 2, "total_tokens": 6},
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "hello world")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello world"}],
+                }
+            ],
+        )
+        self.assertEqual(body["usage"]["output_tokens"], 2)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")
         client = app.test_client()

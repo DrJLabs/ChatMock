@@ -501,6 +501,8 @@ def aggregate_response_from_sse(
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
+    output_items: List[Dict[str, Any]] = []
+    output_text_parts: List[str] = []
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
             if callable(on_event):
@@ -510,8 +512,20 @@ def aggregate_response_from_sse(
                     pass
             response = evt.get("response")
             if isinstance(response, dict):
-                response_obj = response
+                response_obj = copy.deepcopy(response)
             kind = evt.get("type")
+            if kind == "response.output_text.delta":
+                delta = evt.get("delta")
+                if isinstance(delta, str) and delta:
+                    output_text_parts.append(delta)
+            elif kind == "response.output_text.done":
+                text = evt.get("text")
+                if isinstance(text, str) and text and not output_text_parts:
+                    output_text_parts.append(text)
+            elif kind == "response.output_item.done":
+                item = evt.get("item")
+                if isinstance(item, dict):
+                    output_items.append(copy.deepcopy(item))
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
@@ -522,7 +536,66 @@ def aggregate_response_from_sse(
                 break
     finally:
         upstream.close()
+    if response_obj is not None:
+        response_obj = _populate_response_output_from_stream(
+            response_obj,
+            output_items=output_items,
+            output_text="".join(output_text_parts),
+        )
     return response_obj, error_obj
+
+
+def _populate_response_output_from_stream(
+    response_obj: Dict[str, Any],
+    *,
+    output_items: List[Dict[str, Any]],
+    output_text: str,
+) -> Dict[str, Any]:
+    populated = copy.deepcopy(response_obj)
+    existing_output = populated.get("output")
+    has_output = isinstance(existing_output, list) and bool(existing_output)
+
+    if not has_output:
+        if output_items:
+            populated["output"] = copy.deepcopy(output_items)
+            has_output = True
+        elif output_text:
+            populated["output"] = [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": output_text}],
+                }
+            ]
+            has_output = True
+
+    if output_text and not isinstance(populated.get("output_text"), str):
+        populated["output_text"] = output_text
+    elif has_output and not isinstance(populated.get("output_text"), str):
+        text_from_items = _response_output_text(populated.get("output"))
+        if text_from_items:
+            populated["output_text"] = text_from_items
+
+    return populated
+
+
+def _response_output_text(output: Any) -> str:
+    if not isinstance(output, list):
+        return ""
+    parts: List[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "output_text":
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return "".join(parts)
 
 
 def stream_upstream_bytes(
