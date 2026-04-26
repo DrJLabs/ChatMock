@@ -1222,6 +1222,52 @@ class RouteTests(unittest.TestCase):
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
 
+    def test_aggregate_response_from_sse_does_not_synthesize_partial_stream(self) -> None:
+        observed_events: list[dict[str, object]] = []
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_partial", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "partial"},
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=observed_events.append,
+        )
+
+        self.assertIsNone(response_obj)
+        self.assertIsNone(error_obj)
+        self.assertEqual([event.get("type") for event in observed_events], ["response.created", "response.output_text.delta"])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_rejects_stream_without_completed_response(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_partial_route", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "partial"},
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(body["error"]["message"], "Upstream response stream did not contain a completed response object")
+
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
         app = create_app(debug_model="gpt-5.4")

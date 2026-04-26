@@ -565,6 +565,8 @@ def aggregate_response_from_sse(
                 break
     finally:
         upstream.close()
+    if completed_event is None:
+        return (response_obj if error_obj is not None else None), error_obj
     if response_obj is not None:
         response_obj = _populate_response_output_from_stream(
             response_obj,
