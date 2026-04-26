@@ -299,7 +299,7 @@ def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
     return item.get("type") in ("function_call", "web_search_call", "web_search_preview_call")
 
 
-def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any]:
+def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any] | None:
     item_id = event.get("item_id")
     output_index = event.get("output_index")
     content_index = event.get("content_index")
@@ -309,7 +309,7 @@ def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any]:
         or content_index is not None
     ):
         return (item_id if isinstance(item_id, str) else None, output_index, content_index)
-    return (None, None, None)
+    return None
 
 
 def _best_tool_arguments(
@@ -516,42 +516,47 @@ def aggregate_response_from_sse(
     error_obj: Dict[str, Any] | None = None
     output_items: List[Dict[str, Any]] = []
     output_text_parts: List[str] = []
-    output_text_delta_keys: set[tuple[Any, ...]] = set()
+    output_text_delta_keys: set[tuple[Any, Any, Any]] = set()
+    completed_event: Dict[str, Any] | None = None
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
+            response = evt.get("response")
+            if isinstance(response, dict):
+                response_obj = response
+            kind = evt.get("type")
+            if kind == "response.completed":
+                completed_event = evt
+                break
             if callable(on_event):
                 try:
                     on_event(evt)
                 except Exception:
                     pass
-            response = evt.get("response")
-            if isinstance(response, dict):
-                response_obj = response
-            kind = evt.get("type")
             if kind == "response.output_text.delta":
                 delta = evt.get("delta")
                 if isinstance(delta, str) and delta:
-                    output_text_delta_keys.add(_output_text_event_key(evt))
+                    key = _output_text_event_key(evt)
+                    if key is not None:
+                        output_text_delta_keys.add(key)
                     output_text_parts.append(delta)
             elif kind == "response.output_text.done":
                 text = evt.get("text")
-                if (
-                    isinstance(text, str)
-                    and text
-                    and _output_text_event_key(evt) not in output_text_delta_keys
-                ):
-                    output_text_parts.append(text)
+                if isinstance(text, str) and text:
+                    key = _output_text_event_key(evt)
+                    if key is None:
+                        if not "".join(output_text_parts).endswith(text):
+                            output_text_parts.append(text)
+                    elif key not in output_text_delta_keys:
+                        output_text_parts.append(text)
             elif kind == "response.output_item.done":
                 item = evt.get("item")
                 if isinstance(item, dict):
-                    output_items.append(copy.deepcopy(item))
+                    output_items.append(item)
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
                 else:
                     error_obj = {"error": {"message": "response.failed"}}
-                break
-            if kind == "response.completed":
                 break
     finally:
         upstream.close()
@@ -561,6 +566,14 @@ def aggregate_response_from_sse(
             output_items=output_items,
             output_text="".join(output_text_parts),
         )
+    if completed_event is not None and callable(on_event):
+        enriched_event = completed_event.copy()
+        if response_obj is not None:
+            enriched_event["response"] = response_obj
+        try:
+            on_event(enriched_event)
+        except Exception:
+            pass
     return response_obj, error_obj
 
 
@@ -570,7 +583,7 @@ def _populate_response_output_from_stream(
     output_items: List[Dict[str, Any]],
     output_text: str,
 ) -> Dict[str, Any]:
-    populated = copy.deepcopy(response_obj)
+    populated = response_obj.copy()
     existing_output = populated.get("output")
     has_output = isinstance(existing_output, list) and bool(existing_output)
 

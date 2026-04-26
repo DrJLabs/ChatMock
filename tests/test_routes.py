@@ -11,11 +11,12 @@ from unittest.mock import patch
 
 from chatmock.app import create_app
 from chatmock.responses_api import (
+    aggregate_response_from_sse,
     fallback_passthrough_instructions,
     iter_normalized_response_events,
     stream_upstream_bytes,
 )
-from chatmock.session import reset_session_state
+from chatmock.session import note_responses_stream_event, prepare_responses_request_for_session, reset_session_state
 from websockets.sync.client import connect as ws_connect
 
 ADMIN_TOKEN = "test-token"
@@ -1013,6 +1014,164 @@ class RouteTests(unittest.TestCase):
                     "content": [{"type": "output_text", "text": "first second"}],
                 }
             ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_keeps_unkeyed_done_segment_after_unkeyed_delta(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_unkeyed_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "first "},
+                    {"type": "response.output_text.done", "text": "first "},
+                    {"type": "response.output_text.done", "text": "second"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_unkeyed_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "first second")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_unkeyed_text",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "first second"}],
+                }
+            ],
+        )
+
+    def test_aggregate_response_from_sse_reports_enriched_completed_event_to_callback(self) -> None:
+        observed_events: list[dict[str, object]] = []
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_callback", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "callback text"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_callback",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=observed_events.append,
+        )
+
+        self.assertIsNone(error_obj)
+        self.assertEqual(response_obj["output_text"], "callback text")
+        completed = [event for event in observed_events if event.get("type") == "response.completed"]
+        self.assertEqual(len(completed), 1)
+        completed_response = completed[0]["response"]
+        self.assertIsInstance(completed_response, dict)
+        self.assertEqual(completed_response["output_text"], "callback text")
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_resp_callback",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "callback text"}],
+                }
+            ],
+        )
+
+    def test_aggregate_response_from_sse_tracks_enriched_output_for_reuse(self) -> None:
+        session_id = "session-enriched-reuse"
+        first_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+        ]
+        prepare_responses_request_for_session(
+            session_id,
+            {"model": "gpt-5.4", "input": first_input},
+            allow_previous_response_id=True,
+        )
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_reuse", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "assistant output"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_reuse",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=lambda event: note_responses_stream_event(session_id, event),
+        )
+
+        self.assertIsNone(error_obj)
+        self.assertEqual(response_obj["output_text"], "assistant output")
+        follow_up = prepare_responses_request_for_session(
+            session_id,
+            {
+                "model": "gpt-5.4",
+                "input": [
+                    *first_input,
+                    {
+                        "id": "msg_resp_reuse",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "assistant output"}],
+                    },
+                    {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                ],
+            },
+            allow_previous_response_id=True,
+        )
+
+        self.assertEqual(follow_up.payload["previous_response_id"], "resp_reuse")
+        self.assertEqual(
+            follow_up.payload["input"],
+            [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
         )
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
