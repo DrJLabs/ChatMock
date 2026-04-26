@@ -517,6 +517,7 @@ def aggregate_response_from_sse(
     output_items: List[Dict[str, Any]] = []
     output_text_parts: List[str] = []
     output_text_delta_keys: set[tuple[Any, Any, Any]] = set()
+    unkeyed_delta_parts: List[str] = []
     completed_event: Dict[str, Any] | None = None
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
@@ -538,14 +539,18 @@ def aggregate_response_from_sse(
                     key = _output_text_event_key(evt)
                     if key is not None:
                         output_text_delta_keys.add(key)
+                    else:
+                        unkeyed_delta_parts.append(delta)
                     output_text_parts.append(delta)
             elif kind == "response.output_text.done":
                 text = evt.get("text")
                 if isinstance(text, str) and text:
                     key = _output_text_event_key(evt)
                     if key is None:
-                        if not "".join(output_text_parts).endswith(text):
+                        unkeyed_delta_text = "".join(unkeyed_delta_parts)
+                        if text != unkeyed_delta_text:
                             output_text_parts.append(text)
+                        unkeyed_delta_parts = []
                     elif key not in output_text_delta_keys:
                         output_text_parts.append(text)
             elif kind == "response.output_item.done":
