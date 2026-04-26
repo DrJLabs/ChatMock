@@ -580,9 +580,13 @@ def _populate_response_output_from_stream(
             populated["output"] = output_items
             has_output = True
         elif output_text:
+            parent_id = populated.get("id")
+            synthesized_id = f"msg_{parent_id}" if isinstance(parent_id, str) and parent_id else None
             populated["output"] = [
                 {
+                    **({"id": synthesized_id} if synthesized_id else {}),
                     "type": "message",
+                    "status": "completed",
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": output_text}],
                 }

@@ -849,7 +849,9 @@ class RouteTests(unittest.TestCase):
             body["output"],
             [
                 {
+                    "id": "msg_resp_text",
                     "type": "message",
+                    "status": "completed",
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": "hello world"}],
                 }
@@ -931,7 +933,9 @@ class RouteTests(unittest.TestCase):
             body["output"],
             [
                 {
+                    "id": "msg_resp_done_text",
                     "type": "message",
+                    "status": "completed",
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": "first second"}],
                 }
@@ -996,7 +1000,9 @@ class RouteTests(unittest.TestCase):
             body["output"],
             [
                 {
+                    "id": "msg_resp_mixed_text",
                     "type": "message",
+                    "status": "completed",
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": "first second"}],
                 }
