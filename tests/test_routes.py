@@ -11,11 +11,12 @@ from unittest.mock import patch
 
 from chatmock.app import create_app
 from chatmock.responses_api import (
+    aggregate_response_from_sse,
     fallback_passthrough_instructions,
     iter_normalized_response_events,
     stream_upstream_bytes,
 )
-from chatmock.session import reset_session_state
+from chatmock.session import note_responses_stream_event, prepare_responses_request_for_session, reset_session_state
 from websockets.sync.client import connect as ws_connect
 
 ADMIN_TOKEN = "test-token"
@@ -808,6 +809,464 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(outbound_payload["reasoning"]["effort"], "medium")
         self.assertIsInstance(outbound_payload["prompt_cache_key"], str)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_populates_output_from_stream_text_when_completed_output_empty(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "hello"},
+                    {"type": "response.output_text.delta", "delta": " world"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                            "usage": {"input_tokens": 4, "output_tokens": 2, "total_tokens": 6},
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_text")
+        self.assertEqual(body["object"], "response")
+        self.assertEqual(body["status"], "completed")
+        self.assertEqual(body["output_text"], "hello world")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_text",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello world"}],
+                }
+            ],
+        )
+        self.assertEqual(body["usage"]["output_tokens"], 2)
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_replaces_empty_output_text_from_stream_text(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_text_empty", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "filled"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_text_empty",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": "",
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_text_empty")
+        self.assertEqual(body["object"], "response")
+        self.assertEqual(body["status"], "completed")
+        self.assertEqual(body["output_text"], "filled")
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_appends_done_only_output_text_segments(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_done_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.done", "text": "first "},
+                    {"type": "response.output_text.done", "text": "second"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_done_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "first second")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_done_text",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "first second"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_keeps_done_only_segment_after_delta_segment(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_mixed_text", "object": "response", "status": "in_progress"},
+                    },
+                    {
+                        "type": "response.output_text.delta",
+                        "item_id": "msg_1",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": "first ",
+                    },
+                    {
+                        "type": "response.output_text.done",
+                        "item_id": "msg_1",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "text": "first ",
+                    },
+                    {
+                        "type": "response.output_text.done",
+                        "item_id": "msg_1",
+                        "output_index": 0,
+                        "content_index": 1,
+                        "text": "second",
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_mixed_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "first second")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_mixed_text",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "first second"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_keeps_unkeyed_done_segment_after_unkeyed_delta(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_unkeyed_text", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "first "},
+                    {"type": "response.output_text.done", "text": "first "},
+                    {"type": "response.output_text.done", "text": "second"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_unkeyed_text",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "first second")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_unkeyed_text",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "first second"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_preserves_repeated_unkeyed_done_segments(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_repeated_done", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.done", "text": "ha"},
+                    {"type": "response.output_text.done", "text": "ha"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_repeated_done",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["output_text"], "haha")
+        self.assertEqual(
+            body["output"],
+            [
+                {
+                    "id": "msg_resp_repeated_done",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "haha"}],
+                }
+            ],
+        )
+
+    def test_aggregate_response_from_sse_reports_enriched_completed_event_to_callback(self) -> None:
+        observed_events: list[dict[str, object]] = []
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_callback", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "callback text"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_callback",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=observed_events.append,
+        )
+
+        self.assertIsNone(error_obj)
+        self.assertEqual(response_obj["output_text"], "callback text")
+        completed = [event for event in observed_events if event.get("type") == "response.completed"]
+        self.assertEqual(len(completed), 1)
+        completed_response = completed[0]["response"]
+        self.assertIsInstance(completed_response, dict)
+        self.assertEqual(completed_response["output_text"], "callback text")
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_resp_callback",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "callback text"}],
+                }
+            ],
+        )
+
+    def test_aggregate_response_from_sse_tracks_enriched_output_for_reuse(self) -> None:
+        session_id = "session-enriched-reuse"
+        first_input = [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+        ]
+        prepare_responses_request_for_session(
+            session_id,
+            {"model": "gpt-5.4", "input": first_input},
+            allow_previous_response_id=True,
+        )
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_reuse", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "assistant output"},
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_reuse",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                            "output_text": None,
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=lambda event: note_responses_stream_event(session_id, event),
+        )
+
+        self.assertIsNone(error_obj)
+        self.assertEqual(response_obj["output_text"], "assistant output")
+        follow_up = prepare_responses_request_for_session(
+            session_id,
+            {
+                "model": "gpt-5.4",
+                "input": [
+                    *first_input,
+                    {
+                        "id": "msg_resp_reuse",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "assistant output"}],
+                    },
+                    {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]},
+                ],
+            },
+            allow_previous_response_id=True,
+        )
+
+        self.assertEqual(follow_up.payload["previous_response_id"], "resp_reuse")
+        self.assertEqual(
+            follow_up.payload["input"],
+            [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
+        )
+
+    def test_aggregate_response_from_sse_does_not_synthesize_partial_stream(self) -> None:
+        observed_events: list[dict[str, object]] = []
+
+        response_obj, error_obj = aggregate_response_from_sse(
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_partial", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "partial"},
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            on_event=observed_events.append,
+        )
+
+        self.assertIsNone(response_obj)
+        self.assertIsNone(error_obj)
+        self.assertEqual([event.get("type") for event in observed_events], ["response.created", "response.output_text.delta"])
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_rejects_stream_without_completed_response(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {"id": "resp_partial_route", "object": "response", "status": "in_progress"},
+                    },
+                    {"type": "response.output_text.delta", "delta": "partial"},
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(body["error"]["message"], "Upstream response stream did not contain a completed response object")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_honors_debug_model_override(self, mock_start) -> None:
