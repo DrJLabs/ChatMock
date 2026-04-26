@@ -299,6 +299,20 @@ def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
     return item.get("type") in ("function_call", "web_search_call", "web_search_preview_call")
 
 
+def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any] | tuple[str]:
+    item_id = event.get("item_id")
+    output_index = event.get("output_index")
+    content_index = event.get("content_index")
+    if (
+        isinstance(item_id, str)
+        and item_id.strip()
+        or output_index is not None
+        or content_index is not None
+    ):
+        return (item_id if isinstance(item_id, str) else None, output_index, content_index)
+    return ("default",)
+
+
 def _best_tool_arguments(
     pending: Dict[str, Any] | None,
     *,
@@ -503,7 +517,7 @@ def aggregate_response_from_sse(
     error_obj: Dict[str, Any] | None = None
     output_items: List[Dict[str, Any]] = []
     output_text_parts: List[str] = []
-    saw_output_text_delta = False
+    output_text_delta_keys: set[tuple[Any, ...]] = set()
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
             if callable(on_event):
@@ -518,11 +532,15 @@ def aggregate_response_from_sse(
             if kind == "response.output_text.delta":
                 delta = evt.get("delta")
                 if isinstance(delta, str) and delta:
-                    saw_output_text_delta = True
+                    output_text_delta_keys.add(_output_text_event_key(evt))
                     output_text_parts.append(delta)
             elif kind == "response.output_text.done":
                 text = evt.get("text")
-                if isinstance(text, str) and text and not saw_output_text_delta:
+                if (
+                    isinstance(text, str)
+                    and text
+                    and _output_text_event_key(evt) not in output_text_delta_keys
+                ):
                     output_text_parts.append(text)
             elif kind == "response.output_item.done":
                 item = evt.get("item")
@@ -559,7 +577,7 @@ def _populate_response_output_from_stream(
 
     if not has_output:
         if output_items:
-            populated["output"] = list(output_items)
+            populated["output"] = output_items
             has_output = True
         elif output_text:
             populated["output"] = [
