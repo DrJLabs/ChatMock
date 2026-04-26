@@ -844,6 +844,9 @@ class RouteTests(unittest.TestCase):
 
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_text")
+        self.assertEqual(body["object"], "response")
+        self.assertEqual(body["status"], "completed")
         self.assertEqual(body["output_text"], "hello world")
         self.assertEqual(
             body["output"],
@@ -892,6 +895,9 @@ class RouteTests(unittest.TestCase):
 
         body = response.get_json()
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], "resp_text_empty")
+        self.assertEqual(body["object"], "response")
+        self.assertEqual(body["status"], "completed")
         self.assertEqual(body["output_text"], "filled")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")

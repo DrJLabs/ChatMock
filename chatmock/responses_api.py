@@ -299,18 +299,17 @@ def _is_buffered_tool_call_event(event: Dict[str, Any]) -> bool:
     return item.get("type") in ("function_call", "web_search_call", "web_search_preview_call")
 
 
-def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any] | tuple[str]:
+def _output_text_event_key(event: Dict[str, Any]) -> tuple[Any, Any, Any]:
     item_id = event.get("item_id")
     output_index = event.get("output_index")
     content_index = event.get("content_index")
     if (
-        isinstance(item_id, str)
-        and item_id.strip()
+        (isinstance(item_id, str) and item_id.strip())
         or output_index is not None
         or content_index is not None
     ):
         return (item_id if isinstance(item_id, str) else None, output_index, content_index)
-    return ("default",)
+    return (None, None, None)
 
 
 def _best_tool_arguments(
