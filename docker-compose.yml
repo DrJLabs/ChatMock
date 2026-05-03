@@ -1,5 +1,6 @@
 services:
   chatmock:
+    restart: unless-stopped
     image: ${CHATMOCK_IMAGE:-storagetime/chatmock:latest}
     container_name: ${CHATMOCK_CONTAINER_NAME:-chatmock}
     command: ["serve"]
@@ -22,6 +23,7 @@ services:
       start_period: 5s
 
   chatmock-clawmem:
+    restart: unless-stopped
     image: ${CHATMOCK_IMAGE:-storagetime/chatmock:latest}
     container_name: ${CHATMOCK_CLAWMEM_CONTAINER_NAME:-chatmock-clawmem}
     command: ["serve"]
