@@ -514,13 +514,11 @@ def aggregate_response_from_sse(
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
     response_obj: Dict[str, Any] | None = None
     error_obj: Dict[str, Any] | None = None
-    output_items: List[Dict[str, Any]] = []
-    output_text_parts: List[str] = []
-    output_text_delta_keys: set[tuple[Any, Any, Any]] = set()
-    unkeyed_delta_parts: List[str] = []
+    output_accumulator = ResponsesStreamOutputAccumulator()
     completed_event: Dict[str, Any] | None = None
     try:
         for evt in iter_normalized_response_events(iter_sse_event_payloads(upstream)):
+            evt = output_accumulator.process(evt)
             response = evt.get("response")
             if isinstance(response, dict):
                 response_obj = response
@@ -533,30 +531,6 @@ def aggregate_response_from_sse(
                     on_event(evt)
                 except Exception:
                     pass
-            if kind == "response.output_text.delta":
-                delta = evt.get("delta")
-                if isinstance(delta, str) and delta:
-                    key = _output_text_event_key(evt)
-                    if key is not None:
-                        output_text_delta_keys.add(key)
-                    else:
-                        unkeyed_delta_parts.append(delta)
-                    output_text_parts.append(delta)
-            elif kind == "response.output_text.done":
-                text = evt.get("text")
-                if isinstance(text, str) and text:
-                    key = _output_text_event_key(evt)
-                    if key is None:
-                        unkeyed_delta_text = "".join(unkeyed_delta_parts)
-                        if text != unkeyed_delta_text:
-                            output_text_parts.append(text)
-                        unkeyed_delta_parts = []
-                    elif key not in output_text_delta_keys:
-                        output_text_parts.append(text)
-            elif kind == "response.output_item.done":
-                item = evt.get("item")
-                if isinstance(item, dict):
-                    output_items.append(item)
             if kind == "response.failed":
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
                     error_obj = {"error": response.get("error")}
@@ -567,18 +541,9 @@ def aggregate_response_from_sse(
         upstream.close()
     if completed_event is None:
         return (response_obj if error_obj is not None else None), error_obj
-    if response_obj is not None:
-        response_obj = _populate_response_output_from_stream(
-            response_obj,
-            output_items=output_items,
-            output_text="".join(output_text_parts),
-        )
     if completed_event is not None and callable(on_event):
-        enriched_event = completed_event.copy()
-        if response_obj is not None:
-            enriched_event["response"] = response_obj
         try:
-            on_event(enriched_event)
+            on_event(completed_event)
         except Exception:
             pass
     return response_obj, error_obj
@@ -641,6 +606,65 @@ def _response_output_text(output: Any) -> str:
     return "".join(parts)
 
 
+class ResponsesStreamOutputAccumulator:
+    def __init__(self) -> None:
+        self._output_items: List[Dict[str, Any]] = []
+        self._output_text_parts: List[str] = []
+        self._output_text_delta_keys: set[tuple[Any, Any, Any]] = set()
+        self._unkeyed_delta_parts: List[str] = []
+
+    def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        kind = event.get("type")
+        if kind == "response.completed":
+            return self._enrich_completed_event(event)
+        if kind == "response.output_text.delta":
+            self._record_output_text_delta(event)
+        elif kind == "response.output_text.done":
+            self._record_output_text_done(event)
+        elif kind == "response.output_item.done":
+            item = event.get("item")
+            if isinstance(item, dict):
+                self._output_items.append(copy.deepcopy(item))
+        return event
+
+    def _record_output_text_delta(self, event: Dict[str, Any]) -> None:
+        delta = event.get("delta")
+        if not isinstance(delta, str) or not delta:
+            return
+        key = _output_text_event_key(event)
+        if key is not None:
+            self._output_text_delta_keys.add(key)
+        else:
+            self._unkeyed_delta_parts.append(delta)
+        self._output_text_parts.append(delta)
+
+    def _record_output_text_done(self, event: Dict[str, Any]) -> None:
+        text = event.get("text")
+        if not isinstance(text, str) or not text:
+            return
+        key = _output_text_event_key(event)
+        if key is None:
+            unkeyed_delta_text = "".join(self._unkeyed_delta_parts)
+            if text != unkeyed_delta_text:
+                self._output_text_parts.append(text)
+            self._unkeyed_delta_parts = []
+            return
+        if key not in self._output_text_delta_keys:
+            self._output_text_parts.append(text)
+
+    def _enrich_completed_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return event
+        enriched = event.copy()
+        enriched["response"] = _populate_response_output_from_stream(
+            response,
+            output_items=self._output_items,
+            output_text="".join(self._output_text_parts),
+        )
+        return enriched
+
+
 def stream_upstream_bytes(
     upstream: Any,
     *,
@@ -648,6 +672,7 @@ def stream_upstream_bytes(
 ) -> Iterable[bytes]:
     try:
         normalizer = ResponsesToolCallStreamNormalizer()
+        output_accumulator = ResponsesStreamOutputAccumulator()
         for frame in iter_sse_frames(upstream):
             evt = frame.event
             if not isinstance(evt, dict):
@@ -655,6 +680,7 @@ def stream_upstream_bytes(
                 continue
 
             for normalized in normalizer.process(evt):
+                normalized = output_accumulator.process(normalized)
                 if callable(on_event):
                     try:
                         on_event(normalized)
@@ -663,6 +689,7 @@ def stream_upstream_bytes(
                 event_type = normalized.get("type")
                 if normalized.get("data") == "[DONE]" or event_type == "[DONE]":
                     for flushed in normalizer.flush():
+                        flushed = output_accumulator.process(flushed)
                         if callable(on_event):
                             try:
                                 on_event(flushed)
@@ -675,6 +702,7 @@ def stream_upstream_bytes(
                 payload = json.dumps(normalized, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
         for normalized in normalizer.flush():
+            normalized = output_accumulator.process(normalized)
             if callable(on_event):
                 try:
                     on_event(normalized)
