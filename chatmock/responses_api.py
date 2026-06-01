@@ -616,7 +616,10 @@ class ResponsesStreamOutputAccumulator:
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
         kind = event.get("type")
         if kind == "response.completed":
-            return self._enrich_completed_event(event)
+            try:
+                return self._enrich_completed_event(event)
+            finally:
+                self._reset()
         if kind == "response.output_text.delta":
             self._record_output_text_delta(event)
         elif kind == "response.output_text.done":
@@ -651,6 +654,12 @@ class ResponsesStreamOutputAccumulator:
             return
         if key not in self._output_text_delta_keys:
             self._output_text_parts.append(text)
+
+    def _reset(self) -> None:
+        self._output_items = []
+        self._output_text_parts = []
+        self._output_text_delta_keys = set()
+        self._unkeyed_delta_parts = []
 
     def _enrich_completed_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         response = event.get("response")
