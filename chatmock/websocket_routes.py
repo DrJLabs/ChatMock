@@ -13,6 +13,7 @@ from websockets.exceptions import ConnectionClosed
 
 from .responses_api import (
     ResponsesRequestError,
+    ResponsesStreamOutputAccumulator,
     ResponsesToolCallStreamNormalizer,
     extract_client_session_id,
     normalize_responses_payload,
@@ -87,10 +88,12 @@ def register_websocket_routes(sock: Sock) -> None:
 
         def _flush_normalized_events(
             stream_normalizer: ResponsesToolCallStreamNormalizer,
+            output_accumulator: ResponsesStreamOutputAccumulator,
             *,
             session_id: str | None,
         ) -> None:
             for normalized_event in stream_normalizer.flush():
+                normalized_event = output_accumulator.process(normalized_event)
                 normalized_message = json.dumps(normalized_event, ensure_ascii=False)
                 try:
                     ws.send(normalized_message)
@@ -197,17 +200,26 @@ def register_websocket_routes(sock: Sock) -> None:
                 upstream_ws.send(outbound_text)
 
                 stream_normalizer = ResponsesToolCallStreamNormalizer()
+                output_accumulator = ResponsesStreamOutputAccumulator()
                 while True:
                     try:
                         upstream_message = upstream_ws.recv()
                     except ConnectionClosed:
-                        _flush_normalized_events(stream_normalizer, session_id=active_session_id)
+                        _flush_normalized_events(
+                            stream_normalizer,
+                            output_accumulator,
+                            session_id=active_session_id,
+                        )
                         if active_session_id:
                             clear_responses_reuse_state(active_session_id)
                         _send_error("Upstream websocket closed unexpectedly.", status_code=502)
                         return
                     if upstream_message is None:
-                        _flush_normalized_events(stream_normalizer, session_id=active_session_id)
+                        _flush_normalized_events(
+                            stream_normalizer,
+                            output_accumulator,
+                            session_id=active_session_id,
+                        )
                         if active_session_id:
                             clear_responses_reuse_state(active_session_id)
                         _send_error("Upstream websocket closed unexpectedly.", status_code=502)
@@ -225,6 +237,7 @@ def register_websocket_routes(sock: Sock) -> None:
                     emitted_terminal = False
                     if isinstance(parsed, dict):
                         for normalized_event in stream_normalizer.process(parsed):
+                            normalized_event = output_accumulator.process(normalized_event)
                             normalized_message = json.dumps(normalized_event, ensure_ascii=False)
                             ws.send(normalized_message)
                             if active_session_id:

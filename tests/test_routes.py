@@ -1663,6 +1663,65 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[4]["type"], "response.completed")
 
     @patch("chatmock.routes_openai.start_upstream_raw_request")
+    def test_responses_route_stream_enriches_completed_response_output(self, mock_start) -> None:
+        mock_start.return_value = (
+            FakeUpstream(
+                [
+                    {
+                        "type": "response.created",
+                        "response": {
+                            "id": "resp_route_stream_output",
+                            "object": "response",
+                            "status": "in_progress",
+                        },
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "id": "msg_route_stream_output",
+                            "type": "message",
+                            "status": "completed",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": "route assistant output"}],
+                        },
+                    },
+                    {
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_route_stream_output",
+                            "object": "response",
+                            "status": "completed",
+                        },
+                    },
+                ],
+                headers={"Content-Type": "text/event-stream"},
+            ),
+            None,
+        )
+
+        response = self.client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "input": "hello", "stream": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        events = decode_sse_events(response.get_data(as_text=True))
+        completed_response = events[-1]["response"]
+        self.assertEqual(completed_response["output_text"], "route assistant output")
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_route_stream_output",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "route assistant output"}],
+                }
+            ],
+        )
+
+    @patch("chatmock.routes_openai.start_upstream_raw_request")
     def test_responses_route_rejects_unsupported_explicit_priority(self, mock_start) -> None:
         response = self.client.post(
             "/v1/responses",
@@ -1768,6 +1827,85 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(
             follow_up["input"],
             [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second"}]}],
+        )
+
+    @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
+    @patch("chatmock.websocket_routes.connect_upstream_websocket")
+    def test_responses_websocket_enriches_completed_response_output(self, mock_connect, _mock_auth) -> None:
+        class FakeUpstreamWebsocket:
+            def __init__(self) -> None:
+                self.sent: list[str] = []
+                self._messages = [
+                    json.dumps({"type": "response.created", "response": {"id": "resp_ws_output"}}),
+                    json.dumps(
+                        {
+                            "type": "response.output_item.done",
+                            "item": {
+                                "id": "msg_ws_output",
+                                "type": "message",
+                                "status": "completed",
+                                "role": "assistant",
+                                "content": [{"type": "output_text", "text": "websocket assistant output"}],
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "response.completed", "response": {"id": "resp_ws_output"}}),
+                ]
+
+            def send(self, message: str) -> None:
+                self.sent.append(message)
+
+            def recv(self) -> str:
+                return self._messages.pop(0)
+
+            def close(self) -> None:
+                return None
+
+        fake_upstream = FakeUpstreamWebsocket()
+        mock_connect.return_value = fake_upstream
+
+        app = create_app()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+
+        server_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": host,
+                "port": port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+        time.sleep(0.5)
+
+        with ws_connect(f"ws://{host}:{port}/v1/responses") as client:
+            client.send(json.dumps({"type": "response.create", "model": "gpt-5.4", "input": "hello"}))
+            created = json.loads(client.recv())
+            item_done = json.loads(client.recv())
+            completed = json.loads(client.recv())
+
+        self.assertEqual(created["type"], "response.created")
+        self.assertEqual(item_done["type"], "response.output_item.done")
+        self.assertEqual(completed["type"], "response.completed")
+        completed_response = completed["response"]
+        self.assertEqual(completed_response["output_text"], "websocket assistant output")
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_ws_output",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "websocket assistant output"}],
+                }
+            ],
         )
 
     @patch("chatmock.websocket_routes.get_effective_chatgpt_auth", return_value=("token", "acct"))
@@ -2088,6 +2226,144 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "response.completed")
         self.assertEqual(events[0]["response"]["id"], "resp_raw")
         self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_stream_upstream_bytes_enriches_completed_response_from_output_items(self) -> None:
+        upstream = FakeUpstream(
+            [
+                {
+                    "type": "response.created",
+                    "response": {"id": "resp_stream_output", "object": "response", "status": "in_progress"},
+                },
+                {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "id": "msg_stream_output",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "assistant output"}],
+                    },
+                },
+                {
+                    "type": "response.completed",
+                    "response": {"id": "resp_stream_output", "object": "response", "status": "completed"},
+                },
+            ],
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        self.assertEqual(events[-1]["type"], "response.completed")
+        completed_response = events[-1]["response"]
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_stream_output",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "assistant output"}],
+                }
+            ],
+        )
+        self.assertEqual(completed_response["output_text"], "assistant output")
+
+    def test_stream_upstream_bytes_synthesizes_output_from_text_delta(self) -> None:
+        upstream = FakeUpstream(
+            [
+                {
+                    "type": "response.created",
+                    "response": {"id": "resp_stream_delta", "object": "response", "status": "in_progress"},
+                },
+                {
+                    "type": "response.output_text.delta",
+                    "delta": "hello ",
+                    "item_id": "msg_stream_delta",
+                    "output_index": 0,
+                    "content_index": 0,
+                },
+                {
+                    "type": "response.output_text.done",
+                    "text": "hello world",
+                    "item_id": "msg_stream_delta",
+                    "output_index": 0,
+                    "content_index": 0,
+                },
+                {
+                    "type": "response.completed",
+                    "response": {"id": "resp_stream_delta", "object": "response", "status": "completed"},
+                },
+            ],
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        events = decode_sse_events(body)
+
+        completed_response = events[-1]["response"]
+        self.assertEqual(completed_response["output_text"], "hello ")
+        self.assertEqual(
+            completed_response["output"],
+            [
+                {
+                    "id": "msg_resp_stream_delta",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello "}],
+                }
+            ],
+        )
+
+    def test_stream_upstream_bytes_resets_output_after_completed_response(self) -> None:
+        upstream = FakeUpstream(
+            [
+                {
+                    "type": "response.created",
+                    "response": {"id": "resp_stream_first", "object": "response", "status": "in_progress"},
+                },
+                {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "id": "msg_stream_first",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "first output"}],
+                    },
+                },
+                {
+                    "type": "response.completed",
+                    "response": {"id": "resp_stream_first", "object": "response", "status": "completed"},
+                },
+                {
+                    "type": "response.created",
+                    "response": {"id": "resp_stream_second", "object": "response", "status": "in_progress"},
+                },
+                {
+                    "type": "response.completed",
+                    "response": {"id": "resp_stream_second", "object": "response", "status": "completed"},
+                },
+            ],
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+        body = b"".join(stream_upstream_bytes(upstream)).decode("utf-8")
+        completed: list[dict[str, object]] = []
+        for event in decode_sse_events(body):
+            if event.get("type") != "response.completed":
+                continue
+            response = event.get("response")
+            if not isinstance(response, dict):
+                self.fail("response.completed event must include a response object")
+            completed.append(response)
+
+        self.assertEqual(completed[0]["output_text"], "first output")
+        self.assertNotIn("output", completed[1])
+        self.assertNotIn("output_text", completed[1])
 
     def test_stream_upstream_bytes_flushes_buffered_tool_call_before_done(self) -> None:
         tool_args = "{\"query\":\"flush-before-done\"}"
